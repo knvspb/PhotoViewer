@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">letseetheworld PhotoViewer</string>
+    <string name="title_activity_main">letseetheworld PhotoViewer</string>
+    <string name="package_name">ru.letseetheworld.photoviewer</string>
+    <string name="custom_url_scheme">ru.letseetheworld.photoviewer</string>
+</resources>

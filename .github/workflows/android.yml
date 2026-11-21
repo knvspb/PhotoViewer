@@ -1,0 +1,52 @@
+# Сборка APK для Android / Android TV (Capacitor) и публикация в релиз «android-latest»
+name: Android APK
+on:
+  push:
+    branches: [main]
+    paths: ['index.html', 'lib/**', 'android-app/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: android-app/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+      - name: Install and sync web app into the Android project
+        working-directory: android-app
+        run: |
+          npm ci
+          npm run sync
+      - name: Build APK
+        working-directory: android-app/android
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug
+      - name: Rename
+        run: cp android-app/android/app/build/outputs/apk/debug/app-debug.apk letseetheworld-photoviewer.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: letseetheworld-photoviewer-apk
+          path: letseetheworld-photoviewer.apk
+      - name: Publish to release "android-latest"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view android-latest >/dev/null 2>&1 || gh release create android-latest --prerelease \
+            --title "Android / Android TV — последняя сборка" \
+            --notes "Собирается автоматически из ветки main. Установка: скачайте letseetheworld-photoviewer.apk и откройте на устройстве (разрешите установку из неизвестных источников)."
+          gh release upload android-latest letseetheworld-photoviewer.apk --clobber
+          gh release edit android-latest --notes "Сборка ${GITHUB_RUN_NUMBER} из ${GITHUB_SHA::7} ($(date -u +%Y-%m-%d)). Установка: скачайте letseetheworld-photoviewer.apk и откройте на устройстве (разрешите установку из неизвестных источников)."

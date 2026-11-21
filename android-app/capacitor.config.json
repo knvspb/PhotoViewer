@@ -1,0 +1,14 @@
+{
+  "appId": "ru.letseetheworld.photoviewer",
+  "appName": "letseetheworld PhotoViewer",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true
+  },
+  "server": {
+    "androidScheme": "https",
+    "hostname": "localhost",
+    "allowNavigation": ["oauth.yandex.ru", "passport.yandex.ru", "sso.passport.yandex.ru", "id.yandex.ru", "*.yandex.ru", "yandex.ru", "*.yandex.net", "knvspb.github.io"]
+  }
+}

@@ -159,6 +159,12 @@
   #showPanel input.inl { background: #12151b; color: #e6e9ef; border-color: #3a4150; }
   #bar { position: absolute; left: 0; bottom: 0; height: 2px; background: rgba(255,255,255,.5); width: 0; }
 
+  /* --- пульт ТВ: заметный фокус, крупнее шрифт --- */
+  body.tv :focus { outline: 3px solid #ffd54a !important; outline-offset: 2px; }
+  body.tv .tile:focus { outline-offset: -3px; }
+  body.tv aside { font-size: 15px; }
+  body.tv #tools { opacity: 1; }
+
   /* --- окно Яндекс.Диска --- */
   .modal { position: fixed; inset: 0; z-index: 6000; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 16px; }
   .modal[hidden] { display: none; }
@@ -189,6 +195,7 @@
   .tile img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity .25s; }
   .tile img.ld { opacity: 1; }
   .tile:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .tile.bad::after { content: '⚠'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 28px; color: var(--warn); }
   .tile .nm { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 6px 4px; font-size: 11px; color: #fff;
               background: linear-gradient(transparent, rgba(0,0,0,.7)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
               opacity: 0; transition: opacity .2s; }
@@ -239,7 +246,7 @@
 <aside>
   <header class="top">
     <h1>letseetheworld <span style="font-weight:500">PhotoViewer</span></h1>
-    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-22.2</span>
+    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-22.3</span>
   </header>
 
   <section class="card">
@@ -436,6 +443,16 @@ const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'bas
 const cmpName = (a, b) => collator.compare(a, b);
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const hasFSA = 'showDirectoryPicker' in window;
+/* Android-приложение (Capacitor): папки — через системный выбор (SAF, в т.ч. флешки), файлы — https://localhost/_saf_/… */
+const NATIVE = !!(window.Capacitor && Capacitor.isNativePlatform && Capacitor.isNativePlatform());
+const plugin = (n) => NATIVE ? (Capacitor.registerPlugin ? Capacitor.registerPlugin(n) : Capacitor.Plugins[n]) : null;
+const Saf = plugin('Saf');
+const safUrl = (uri) => '/_saf_/file?u=' + encodeURIComponent(uri);
+// «Файл» с чтением по кускам (Range) — для MP4-метаданных и EXIF без скачивания всего файла
+const rangeFile = (url, size, name) => ({ name, size, slice: (a, b) => ({ arrayBuffer: async () =>
+  (await fetch(url, { headers: { Range: `bytes=${a}-${Math.min(b, size) - 1}` } })).arrayBuffer() }) });
+// ТВ-режим: управление пультом (в приложении без сенсорного экрана или по ?tv в адресе)
+const TV = /[?&]tv\b/.test(location.search) || (NATIVE && navigator.maxTouchPoints === 0);
 
 function status(msg) { $('status').textContent = msg || ''; }
 // Заметное сообщение прямо под кнопками добавления папок
@@ -532,7 +549,7 @@ const YA = (() => {
   const MANUAL_RU = 'https://oauth.yandex.ru/verification_code';
   let token = load('yatoken', null);
   // Адрес возврата должен совпадать с указанным в приложении Яндекса буква в букву (GitHub Pages открывается и как /photoviewer/)
-  const HOME = location.hostname === 'knvspb.github.io' ? 'https://knvspb.github.io/PhotoViewer/' : location.origin + location.pathname;
+  const HOME = location.hostname === 'knvspb.github.io' || NATIVE ? 'https://knvspb.github.io/PhotoViewer/' : location.origin + location.pathname;
   const authUrl = (manual) => 'https://oauth.yandex.ru/authorize?response_type=token&client_id=' + CLIENT_ID +
     '&redirect_uri=' + encodeURIComponent(manual ? MANUAL_RU : HOME) + (manual ? '' : '&state=photoshow');
   // Вернулись от Яндекса: #access_token=…  или  #error=…
@@ -678,6 +695,11 @@ async function loadSources() {
     const saved = (await DB.all('sources')) || [];
     saved.sort((a, b) => a.order - b.order);
     for (const s of saved) {
+      if (s.kind === 'saf') {
+        sources.push(newSource({ id: s.id, name: s.name, kind: 'saf', uri: s.uri, enabled: s.enabled !== false,
+          excluded: new Set(s.excluded || []), open: new Set(s.open || []), tree: { name: s.name, path: '', docId: null, children: null } }));
+        continue;
+      }
       if (s.kind === 'yadisk') {
         sources.push(newSource({ id: s.id, name: s.name, kind: 'yadisk', path: s.path, enabled: s.enabled !== false,
           excluded: new Set(s.excluded || []), open: new Set(s.open || []), tree: { name: s.name, path: '', children: null } }));
@@ -695,7 +717,7 @@ async function loadSources() {
 async function persistSources() {
   dropListCache();
   try {
-    const keep = sources.filter(s => s.kind === 'handle' || s.kind === 'yadisk');
+    const keep = sources.filter(s => s.kind === 'handle' || s.kind === 'yadisk' || s.kind === 'saf');
     const ids = new Set(keep.map(s => s.id));
     for (const old of (await DB.all('sources')) || []) if (!ids.has(old.id)) await DB.del('sources', old.id);
     for (let i = 0; i < sources.length; i++) {
@@ -703,6 +725,8 @@ async function persistSources() {
       if (s.kind === 'handle') await DB.put('sources', { id: s.id, name: s.name, handle: s.handle, enabled: s.enabled, order: i,
         excluded: [...s.excluded], open: [...s.open] });
       else if (s.kind === 'yadisk') await DB.put('sources', { id: s.id, name: s.name, kind: 'yadisk', path: s.path, enabled: s.enabled, order: i,
+        excluded: [...s.excluded], open: [...s.open] });
+      else if (s.kind === 'saf') await DB.put('sources', { id: s.id, name: s.name, kind: 'saf', uri: s.uri, enabled: s.enabled, order: i,
         excluded: [...s.excluded], open: [...s.open] });
     }
   } catch (e) { console.warn('Не удалось сохранить список папок:', e); }
@@ -739,6 +763,12 @@ function addFileList(fileList) {
 }
 async function loadChildren(src, node) {
   if (node.children) return;
+  if (src.kind === 'saf') {
+    const { items } = await Saf.list({ uri: src.uri, docId: node.docId || undefined });
+    node.children = items.filter(i => i.dir).sort((a, b) => cmpName(a.name, b.name))
+      .map(i => ({ name: i.name, path: node.path ? node.path + '/' + i.name : i.name, docId: i.id, children: null }));
+    return;
+  }
   if (src.kind === 'yadisk') {
     const items = await YA.list(yaPath(src, node.path));
     node.children = items.filter(i => i.type === 'dir').sort((a, b) => cmpName(a.name, b.name))
@@ -771,7 +801,7 @@ function renderNode(s, node, depth, i) {
   const row = document.createElement('div');
   row.className = 'node' + (isSel ? ' sel' : '') + (!own || blocked ? ' off' : '');
   row.style.paddingLeft = (4 + depth * 16) + 'px';
-  const tag = !isRoot ? '' : s.kind === 'yadisk' ? `<span class="tag ${YA.token ? '' : 'warn'}" title="Яндекс.Диск: ${esc(s.path)}">${YA.token ? '☁ Я.Диск' : '☁ нет входа'}</span>`
+  const tag = !isRoot ? '' : s.kind === 'saf' ? `<span class="tag" title="Папка устройства (Android)">📱</span>` : s.kind === 'yadisk' ? `<span class="tag ${YA.token ? '' : 'warn'}" title="Яндекс.Диск: ${esc(s.path)}">${YA.token ? '☁ Я.Диск' : '☁ нет входа'}</span>`
     : s.kind === 'files' ? '<span class="tag" title="Доступ только до перезагрузки страницы">сеанс</span>'
     : s.perm !== 'granted' ? '<span class="tag warn">нет доступа</span>' : '';
   row.innerHTML = `<button class="tw" ${leaf ? 'disabled' : ''} title="Подпапки">${leaf ? '' : open ? '▾' : '▸'}</button>
@@ -832,6 +862,15 @@ async function grant(s) {
 }
 
 $('addDir').onclick = async () => {
+  if (NATIVE) {                                      // Android: системный выбор папки (в т.ч. флешка)
+    try {
+      const r = await Saf.pickFolder();
+      if (sources.some(s => s.kind === 'saf' && s.uri === r.uri)) { status('Эта папка уже в списке'); return; }
+      sources.push(newSource({ id: crypto.randomUUID(), name: r.name || 'Папка', kind: 'saf', uri: r.uri, tree: { name: r.name || 'Папка', path: '', docId: null, children: null } }));
+      renderSources(); persistSources();
+    } catch (e) { if (!/отмен|cancel/i.test(e.message || '')) notice('Не удалось открыть папку: ' + (e.message || e), true); }
+    return;
+  }
   if (!hasFSA) { $('dirInput').click(); return; }   // нет API — сразу совместимый режим
   notice('');
   try {
@@ -898,6 +937,32 @@ async function listSource(src, opt, onCount) {
     split.sort((a, b) => cmpPaths(a.parts, b.parts));
     for (const { f } of split) out.push(mk(f.rel, f.file.name, async () => f.file));
     onCount && onCount(out.length);
+    return out;
+  }
+  if (src.kind === 'saf') {
+    // root (выбранная папка внутри источника) → docId: проходим по именам от корня
+    let docId;
+    for (const seg of root.split('/').filter(Boolean)) {
+      const { items } = await Saf.list({ uri: src.uri, docId });
+      const d = items.find(i => i.dir && i.name === seg); if (!d) throw new Error('папка не найдена: ' + seg); docId = d.id;
+    }
+    const swalk = async (docId, rel) => {
+      const { items } = await Saf.list({ uri: src.uri, docId });
+      let files = items.filter(i => !i.dir && IMG_RE.test(i.name));
+      const dirs = items.filter(i => i.dir && !skip(rel ? rel + '/' + i.name : i.name));
+      files.sort((a, b) => cmpName(a.name, b.name)); dirs.sort((a, b) => cmpName(a.name, b.name));
+      if (rawSkip()) { const plain = new Set(files.filter(i => !RAW_RE.test(i.name)).map(i => baseName(i.name))); files = files.filter(i => !RAW_RE.test(i.name) || !plain.has(baseName(i.name))); }
+      for (const it of files) {
+        const r = rel ? rel + '/' + it.name : it.name, url = safUrl(it.uri);
+        const e = mk(r, it.name, async () => { const res = await fetch(url); if (!res.ok) throw new Error('чтение файла: ' + res.status); return new File([await res.blob()], it.name, { lastModified: it.mtime, type: it.mime || '' }); });
+        e.saf = { uri: it.uri, url, size: it.size, mtime: it.mtime };
+        e.rangeFile = () => rangeFile(url, it.size, it.name);
+        out.push(e);
+      }
+      onCount && onCount(out.length);
+      for (const d of dirs) await swalk(d.id, rel ? rel + '/' + d.name : d.name);
+    };
+    await swalk(docId, root);
     return out;
   }
   if (src.kind === 'yadisk') {
@@ -1052,7 +1117,7 @@ const Similar = (() => {
   // ползунок 4…20 → порог корреляции 0.97 (почти одинаковые) … 0.81 (просто похожие)
   const thr = () => 0.97 - (+$('simThr').value - 4) * 0.01;
   async function statKey(e, pre) {
-    try { const st = e.cloud ? { size: e.cloud.size, lastModified: e.cloud.mtime } : await e.getFile(); return `${pre}|${e.key}|${st.size}|${st.lastModified}`; }
+    try { const st = e.cloud ? { size: e.cloud.size, lastModified: e.cloud.mtime } : e.saf ? { size: e.saf.size, lastModified: e.saf.mtime } : await e.getFile(); return `${pre}|${e.key}|${st.size}|${st.lastModified}`; }
     catch (err) { return null; }
   }
   async function sigOf(e) {
@@ -1181,12 +1246,17 @@ async function ensureMeta(list, onProgress) {
       const e = todo[next++];
       if (e.cloud) { remember(e, e.cloud.meta); done++; continue; }      // Яндекс уже прислал дату и геометку; модели камеры в API нет
       try {
-        const f = await e.getFile();
-        const ck = `m3|${e.key}|${f.size}|${f.lastModified}`;
+        const f = e.saf ? e.rangeFile() : await e.getFile();
+        const ck = `m3|${e.key}|${e.saf ? e.saf.size : f.size}|${e.saf ? e.saf.mtime : f.lastModified}`;
         let v = await DB.get('meta', ck).catch(() => null);
         if (v) fromCache++;
         else {
           if (isVideo(e)) { const x = await mp4meta(f).catch(() => null); v = metaFrom(x); if (x && x.dur) v.dur = x.dur; }
+          else if (e.saf) {                                            // Android: EXIF из первых 256 КБ, без чтения всего файла
+            let x = await exifr.parse(await f.slice(0, 262144).arrayBuffer(), META_OPTS).catch(() => null);
+            if ((!x || (!x.DateTimeOriginal && x.latitude == null)) && /raw|heic/.test(fmtOf(e.name))) x = await metaParse(await e.getFile(), META_OPTS).catch(() => null);
+            v = metaFrom(x);
+          }
           else v = metaFrom(await metaParse(f, META_OPTS).catch(() => null));
           pending.push([ck, v]);
           if (pending.length >= 200) await DB.putMany('meta', pending.splice(0)).catch(() => {});
@@ -1205,10 +1275,11 @@ async function ensureMeta(list, onProgress) {
 async function readGps(entry, file) {
   if (gpsMem.has(entry.key)) return gpsMem.get(entry.key);
   if (entry.cloud) { remember(entry, entry.cloud.meta); return gpsMem.get(entry.key); }
-  const f = file || await entry.getFile();
+  const f = file || (entry.saf ? entry.rangeFile() : await entry.getFile());
   let v;
-  if (isVideo(entry)) { const x = await mp4meta(f).catch(() => null); v = metaFrom(x); if (x && x.dur) v.dur = x.dur; }
-  else v = metaFrom(await metaParse(f, META_OPTS).catch(() => null));
+  if (entry.saf && !file && !isVideo(entry)) v = metaFrom(await exifr.parse(await f.slice(0, 262144).arrayBuffer(), META_OPTS).catch(() => null));
+  else if (isVideo(entry)) { const x = await mp4meta(f).catch(() => null); v = metaFrom(x); if (x && x.dur) v.dur = x.dur; }
+  else if (!v) v = metaFrom(await metaParse(f, META_OPTS).catch(() => null));
   remember(entry, v);
   return gpsMem.get(entry.key);
 }
@@ -1502,7 +1573,7 @@ async function metaParse(file, opts) {
 /* ============================ миниатюры ============================ */
 const Thumbs = (() => {
   // сначала встроенная в EXIF миниатюра (быстро), иначе — уменьшение полного файла; результат — objectURL
-  const thumbs = new Map();
+  const thumbs = new Map(), errs = new Map();
   let active = 0; const queue = [];
   // big = true — крупная (≈360 px) миниатюра для галереи: всегда из полного файла, это медленнее
   function thumb(entry, big = false) {
@@ -1514,10 +1585,17 @@ const Thumbs = (() => {
     while (active < 4 && queue.length) {
       const { entry, big, res } = queue.pop();   // последний запрос — первым: при прокрутке грузится то, что на экране
       active++;
-      makeThumb(entry, big).then(res, () => res(null)).finally(() => { active--; pump(); });
+      makeThumb(entry, big).then(res, (e) => { errs.set(entry.key, e && e.message || String(e)); console.warn('миниатюра', entry.path, e); res(null); }).finally(() => { active--; pump(); });
     }
   }
   async function makeThumb(entry, big) {
+    if (isVideo(entry) && entry.saf) return videoFrame(entry.saf.url, big ? 360 : 160);
+    if (entry.saf && !big && /jpg|heic/.test(fmtOf(entry.name))) {      // Android: встроенная миниатюра из первых 128 КБ
+      try {
+        const head = await entry.rangeFile().slice(0, 131072).arrayBuffer(), t = await exifr.thumbnail(head);
+        if (t && t.length) { const o = await exifr.orientation(head).catch(() => 1); return canvasUrl(await createImageBitmap(new Blob([t], { type: 'image/jpeg' })), 160, o); }
+      } catch (e) {}
+    }
     if (isVideo(entry) && !(entry.cloud && entry.cloud.preview)) {     // кадр из видео
       if (entry.cloud) return null;
       const f = await entry.getFile(), u = URL.createObjectURL(f);
@@ -1564,7 +1642,7 @@ const Thumbs = (() => {
     const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8));
     return URL.createObjectURL(blob);
   }
-  return { get: thumb };
+  return { get: thumb, lastError: (e) => errs.get(e.key) };
 })();
 
 /* ============================ подложки карты ============================ */
@@ -1758,7 +1836,10 @@ const Gallery = (() => {
         if (!o.isIntersecting) continue;
         const t = o.target; io.unobserve(t);
         const img = t.querySelector('img'), b = big;
-        Thumbs.get(list[+t.dataset.i], b).then(u => { if (u && big === b) { img.src = u; img.classList.add('ld'); } });
+        Thumbs.get(list[+t.dataset.i], b).then(u => {
+          if (u && big === b) { img.src = u; img.classList.add('ld'); }
+          else if (!u) { t.classList.add('bad'); t.title = list[+t.dataset.i].path + '\n⚠ ' + (Thumbs.lastError(list[+t.dataset.i]) || 'миниатюру сделать не удалось'); }
+        });
       }
     }, { root: grid, rootMargin: '400px 0px' });
     grid.querySelectorAll('.tile').forEach(t => io.observe(t));
@@ -1782,6 +1863,7 @@ const Gallery = (() => {
     });
     inner.appendChild(frag); el.hidden = false; grid.scrollTop = 0;
     observe();
+    if (TV) setTimeout(() => { const t = inner.querySelector('.tile'); if (t) { t.tabIndex = 0; t.focus(); } }, 50);   // пульт: сразу на первую плитку
   }
   function close() { el.hidden = true; io && io.disconnect(); inner.innerHTML = ''; list = []; }
   grid.addEventListener('click', (ev) => {
@@ -1869,6 +1951,7 @@ const Show = (() => {
       if (isVideo(e)) {                         // видео: не скачиваем в память — локально objectURL, на Диске прямая ссылка
         try {
           if (e.cloud) return { video: true, ok: true, url: await YA.downloadHref(e.cloud.path), file: null };
+          if (e.saf) return { video: true, ok: true, url: e.saf.url, file: null };
           const file = await e.getFile(); return { video: true, ok: true, url: URL.createObjectURL(file), file };
         } catch (err) { return { ok: false, err }; }
       }
@@ -1880,7 +1963,15 @@ const Show = (() => {
           try {
             const href = await YA.downloadHref(e.cloud.path), im = new Image(); im.src = href; await im.decode();
             return { url: href, file: null, ok: true, w: im.naturalWidth, h: im.naturalHeight };
-          } catch (er) { return { ok: false, err: er }; }
+          } catch (er) { err = er; }
+        }
+        // RAW (или то, что не вышло иначе) на Диске — большое превью, которое делает сам Яндекс
+        if (e.cloud && e.cloud.preview) {
+          try {
+            const b = await YA.preview(e.cloud.preview.replace(/([?&]size=)[^&]*/, '$1XXXL'));
+            const url = URL.createObjectURL(b), im = new Image(); im.src = url; await im.decode();
+            return { url, file: null, ok: true, w: im.naturalWidth, h: im.naturalHeight };
+          } catch (er) { return { ok: false, err: new Error(`${err && err.message || err}; превью Яндекса: ${er.message}`) }; }
         }
         return { ok: false, err };
       }
@@ -1963,8 +2054,9 @@ const Show = (() => {
     idx = i;
     const r = await render(list[i], viewMode ? `Просмотр · все папки · ${i + 1} / ${list.length}` : `${i + 1} / ${list.length}`, my);
     if (!r) return;
-    if (!r.ok) {                    // например HEIC в Chrome или битый файл — пропускаем
+    if (!r.ok) {                    // например HEIC в Chrome или битый файл — пропускаем, но причину показываем
       console.warn('Не удалось показать', list[i].path, r.err || '');
+      flash(`Пропущено ${list[i].name}: ${(r.err && r.err.message) || 'браузер не смог показать файл'}`);
       if (++errorsInRow > 50) { flash('Слишком много нечитаемых файлов подряд'); return; }
       return display(i + 1);
     }
@@ -2166,7 +2258,8 @@ const Show = (() => {
     else if (k === 'ArrowUp' || k === 'PageUp') step(-1);
     else if (k === 'ArrowRight') spatial(1);
     else if (k === 'ArrowLeft') spatial(-1);
-    else if (k === ' ') viewMode ? playFromHere() : togglePause();
+    else if (k === ' ' || (k === 'Enter' && !ev.target.closest('button'))) viewMode ? playFromHere() : togglePause();   // OK на пульте
+    else if (k === 'ContextMenu' || k === 'MediaPlayPause') k === 'ContextMenu' ? togglePanel() : (viewMode ? playFromHere() : togglePause());
     else if (k === 'Escape') close();
     else if (k === 'Home') display(0);
     else if (k === '+' || k === '=' || k === '-' || k === '_') {   // интервал — через то же поле, чтобы настройки не расходились
@@ -2524,11 +2617,74 @@ $('coverZoom').addEventListener('change', applyLook);
 applyLook();
 
 if (!window.exifr) notice('Не загрузилась библиотека чтения EXIF (lib/exifr). Геометки и даты недоступны.', true, true);
-else if (!hasFSA) {
+else if (!hasFSA && !NATIVE) {
   notice('Этот браузер не поддерживает File System Access API (так ведут себя Firefox, Safari, Brave по умолчанию).\n' +
     'Папки можно добавлять, но доступ не сохранится: после перезагрузки страницы их придётся выбрать снова. Для полного режима — Chrome или Edge.', false, true);
   $('addDirCompat').hidden = true;
 }
+/* ============================ пульт ТВ: перемещение фокуса стрелками, «Назад» ============================ */
+if (TV) {
+  document.body.classList.add('tv');
+  const SEL = 'button:not([disabled]), select, input[type=number], input[type=range], input:not([type]), summary, .seg label, .chip, .node .name, .node input, .tile, .yadirs li[data-p], a[href]';
+  const visible = (el) => {
+    const r = el.getBoundingClientRect();
+    if (!(r.width > 0 && r.height > 0) || el.closest('[hidden]')) return false;
+    const d = el.closest('details:not([open])'); if (d && el.parentElement !== d) return false;   // содержимое свёрнутого блока
+    return el.checkVisibility ? el.checkVisibility({ visibilityProperty: true, contentVisibilityAuto: true }) : getComputedStyle(el).visibility !== 'hidden';
+  };
+  // активный «слой»: окно Диска → панель настроек в просмотре → галерея → основная страница
+  const layer = () => !$('yaModal').hidden ? $('yaModal') : Show.open ? (!$('showPanel').hidden ? $('showPanel') : null) : Gallery.isOpen ? $('gallery') : document.body;
+  function move(dir) {
+    const L = layer(); if (!L) return false;
+    const cands = [...L.querySelectorAll(SEL)].filter(el => visible(el) && !(L === document.body && el.closest('#gallery, #show, #yaModal')));
+    const cur = document.activeElement && L.contains(document.activeElement) && document.activeElement !== document.body ? document.activeElement : null;
+    if (!cur) { const f = cands[0]; if (f) { f.tabIndex = f.tabIndex < 0 ? 0 : f.tabIndex; f.focus(); } return !!f; }
+    const a = cur.getBoundingClientRect(), ax = a.left + a.width / 2, ay = a.top + a.height / 2;
+    const scored = [];
+    for (const el of cands) {
+      if (el === cur) continue;
+      const b = el.getBoundingClientRect(), bx = b.left + b.width / 2, by = b.top + b.height / 2, dx = bx - ax, dy = by - ay;
+      const main = dir === 'ArrowRight' ? dx : dir === 'ArrowLeft' ? -dx : dir === 'ArrowDown' ? dy : -dy;
+      const side = dir === 'ArrowRight' || dir === 'ArrowLeft' ? Math.abs(dy) : Math.abs(dx);
+      if (main > 2) scored.push([main + side * 2.5, el]);
+    }
+    scored.sort((x, y) => x[0] - y[0]);
+    for (const [, el] of scored) {                 // первый, на котором фокус действительно встал
+      if (el.tabIndex < 0) el.tabIndex = 0;
+      el.focus({ preventScroll: true });
+      if (document.activeElement === el) { el.scrollIntoView({ block: 'nearest', inline: 'nearest' }); break; }
+    }
+    return true;
+  }
+  document.addEventListener('keydown', (ev) => {
+    const k = ev.key, t = ev.target;
+    if (Show.open && $('showPanel').hidden) return;                       // в просмотре стрелки листают фото
+    if (/^Arrow/.test(k)) {
+      // ползунок и число: влево/вправо меняют значение, вверх/вниз — уходят дальше
+      if (t.matches && t.matches('input[type=range], input[type=number]') && (k === 'ArrowLeft' || k === 'ArrowRight')) return;
+      if (t.matches && t.matches('select') && (k === 'ArrowUp' || k === 'ArrowDown') && t === document.activeElement && t.dataset.open) return;
+      if (move(k)) { ev.preventDefault(); ev.stopImmediatePropagation(); }
+    } else if (k === 'Enter' && t.matches && t.matches('.seg label, .chip, .node .name, .tile, .yadirs li, summary')) {
+      ev.preventDefault(); ev.stopImmediatePropagation();
+      const cb = t.querySelector && t.querySelector('input'); (cb && t.matches('.chip, .seg label') ? cb : t).click();
+    }
+  }, true);
+  // первая кнопка получает фокус сразу
+  setTimeout(() => move('ArrowDown'), 300);
+}
+// Android: аппаратная/пультовая кнопка «Назад»
+if (NATIVE) {
+  const App = plugin('App');
+  App && App.addListener('backButton', () => {
+    if (!$('yaModal').hidden) { $('yaClose').click(); return; }
+    if (Show.open) { document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return; }
+    if (Gallery.isOpen) { Gallery.close(); return; }
+    if (App.minimizeApp) App.minimizeApp(); else App.exitApp();
+  });
+  $('addDirCompat').hidden = true;
+  $('addDir').title = 'Выбрать папку на устройстве или флешке';
+}
+
 renderCams();
 Fav.upd();
 $('addYa').onclick = () => YaUI.open();
