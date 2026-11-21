@@ -143,6 +143,20 @@
   #showPanel input.inl { background: #12151b; color: #e6e9ef; border-color: #3a4150; }
   #bar { position: absolute; left: 0; bottom: 0; height: 2px; background: rgba(255,255,255,.5); width: 0; }
 
+  /* --- окно Яндекс.Диска --- */
+  .modal { position: fixed; inset: 0; z-index: 6000; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .modal[hidden] { display: none; }
+  .mbox { background: var(--panel); color: var(--text); border-radius: 12px; padding: 14px 16px; width: min(460px, 100%); max-height: 90vh; overflow: auto;
+          box-shadow: 0 10px 40px rgba(0,0,0,.4); }
+  .mbox p { margin: 10px 0; }
+  .mbox input:not([type]) { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); }
+  .yadirs { list-style: none; margin: 8px 0 0; padding: 0; max-height: 300px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; }
+  .yadirs li { padding: 6px 10px; border-top: 1px solid var(--line); }
+  .yadirs li:first-child { border-top: 0; }
+  .yadirs li[data-p] { cursor: pointer; } .yadirs li[data-p]:hover { background: var(--hover); }
+  .yadirs .err, .diag { color: var(--danger); }
+  .diag { white-space: pre-wrap; font: 12px/1.5 ui-monospace, monospace; color: var(--text); background: var(--bg); padding: 8px; border-radius: 6px; margin-top: 8px; }
+
   /* --- галерея --- */
   #gallery { position: fixed; inset: 0; z-index: 4000; background: var(--bg); display: flex; flex-direction: column; }
   #gallery[hidden] { display: none; }
@@ -208,13 +222,14 @@
 <aside>
   <header class="top">
     <h1>PhotoShow</h1>
-    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-21.8</span>
+    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-21.9</span>
   </header>
 
   <section class="card">
     <div class="card-h">Папки
       <span class="grow"></span>
       <button id="addDir" class="primary sm" title="Добавить папку (можно несколько раз или перетащить сразу несколько)">+ Папка</button>
+      <button id="addYa" class="sm" title="Папка с Яндекс.Диска (нужен вход в Яндекс, доступ только на чтение)">+ Я.Диск</button>
       <button id="addDirCompat" class="sm" title="Совместимый режим: для браузеров без File System Access API. Доступ не сохраняется между сеансами.">+ совм.</button>
       <input id="dirInput" type="file" webkitdirectory multiple hidden>
     </div>
@@ -323,6 +338,13 @@
   <div id="status"></div></div>
 </aside>
 <main><div id="map"></div></main>
+
+<div id="yaModal" class="modal" hidden>
+  <div class="mbox">
+    <div class="row"><b class="grow">☁ Яндекс.Диск</b><button id="yaClose" class="sm" title="Закрыть">✕</button></div>
+    <div id="yaBody"></div>
+  </div>
+</div>
 
 <div id="gallery" hidden>
   <div class="ghead">
@@ -441,11 +463,159 @@ function inChecked(e) { const s = sources.find(x => x.id === e.srcId); return !!
 function newSource(o) {
   return Object.assign({ enabled: true, perm: 'granted', excluded: new Set(), open: new Set() }, o);
 }
+/* ============================ Яндекс.Диск ============================ */
+// REST API Диска: https://yandex.ru/dev/disk-api/doc/ru/   OAuth: https://yandex.ru/dev/id/doc/ru/
+// Токен хранится только в этом браузере (localStorage). Доступ — только чтение (cloud_api:disk.read).
+const YA = (() => {
+  const CLIENT_ID = '101092f44e4a43f7a37eb958467af2fb';
+  const API = 'https://cloud-api.yandex.net/v1/disk';
+  const MANUAL_RU = 'https://oauth.yandex.ru/verification_code';
+  let token = load('yatoken', null);
+  const authUrl = (manual) => 'https://oauth.yandex.ru/authorize?response_type=token&client_id=' + CLIENT_ID +
+    '&redirect_uri=' + encodeURIComponent(manual ? MANUAL_RU : location.origin + location.pathname) + (manual ? '' : '&state=photoshow');
+  // Вернулись от Яндекса: #access_token=…  или  #error=…
+  function takeFromHash() {
+    const h = new URLSearchParams(location.hash.slice(1));
+    if (!h.has('access_token') && !h.has('error')) return null;
+    history.replaceState(null, '', location.pathname + location.search);
+    if (h.has('access_token')) { setToken(h.get('access_token')); return { ok: true }; }
+    return { ok: false, error: h.get('error_description') || h.get('error') };
+  }
+  function setToken(t) { token = (t || '').trim() || null; store('yatoken', token); }
+  class CorsError extends Error {}
+  async function req(url, opts = {}) {
+    try { return await fetch(url, opts); }
+    catch (e) { throw new CorsError('браузер не дал выполнить запрос к ' + new URL(url).host + ' (сеть или CORS)'); }
+  }
+  async function api(path, params = {}) {
+    if (!token) throw new Error('нет входа в Яндекс');
+    const u = new URL(API + path);
+    for (const k in params) u.searchParams.set(k, params[k]);
+    const r = await req(u, { headers: { Authorization: 'OAuth ' + token } });
+    if (r.status === 401) { setToken(null); throw new Error('вход в Яндекс истёк или отозван — подключитесь заново'); }
+    if (!r.ok) { const j = await r.json().catch(() => ({})); throw new Error(`Яндекс.Диск ${r.status}: ${j.message || j.description || r.statusText}`); }
+    return r.json();
+  }
+  // Содержимое папки целиком (постранично)
+  async function list(path) {
+    const out = []; let offset = 0;
+    for (;;) {
+      const j = await api('/resources', { path, limit: 1000, offset, preview_size: 'XL', preview_crop: 'false', sort: 'name' });
+      const e = j._embedded || { items: [], total: 0 };
+      out.push(...e.items); offset += e.items.length;
+      if (!e.items.length || offset >= e.total) break;
+    }
+    return out;
+  }
+  async function download(path) {
+    const j = await api('/resources/download', { path });
+    const r = await req(j.href);
+    if (!r.ok) throw new Error('скачивание: ' + r.status);
+    return r.blob();
+  }
+  async function preview(url) {        // превью Диска отдаются по тому же токену
+    const r = await req(url, { headers: { Authorization: 'OAuth ' + token } });
+    if (!r.ok) throw new Error('превью: ' + r.status);
+    return r.blob();
+  }
+  // «2019-06-12T10:20:30+03:00» → «2019:06:12 10:20:30» (как в EXIF, местное время съёмки)
+  const exifDate = (s) => s ? String(s).replace(/^(\d{4})-(\d\d)-(\d\d)T(\d\d:\d\d:\d\d).*$/, '$1:$2:$3 $4') : '';
+  function metaOf(it) {
+    const x = it.exif || {}, v = { date: exifDate(x.date_time), model: '' };
+    const lat = +x.gps_latitude, lon = +x.gps_longitude;
+    if (x.gps_latitude != null && Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0)) { v.lat = lat; v.lon = lon; }
+    return v;
+  }
+  return { get token() { return token; }, setToken, authUrl, takeFromHash, api, list, download, preview, metaOf, CorsError };
+})();
+
+/* окно «Яндекс.Диск»: вход, выбор папки, проверка подключения */
+const YaUI = (() => {
+  const dlg = $('yaModal'), body = $('yaBody');
+  let cwd = 'disk:/';
+  function open() { dlg.hidden = false; render(); }
+  function close() { dlg.hidden = true; }
+  $('yaClose').onclick = close;
+  dlg.addEventListener('click', (e) => { if (e.target === dlg) close(); });
+  function render() {
+    if (!YA.token) {
+      body.innerHTML = `
+        <p>PhotoViewer получит доступ <b>только на чтение</b> к вашему Диску. Токен хранится только в этом браузере.</p>
+        <div class="row"><button class="primary" data-a="auto">Войти через Яндекс</button></div>
+        <details class="more" style="margin-top:10px"><summary>Если автоматический вход не сработал — вручную</summary>
+          <ol class="hint" style="padding-left:18px;margin:6px 0">
+            <li><a href="${YA.authUrl(true)}" target="_blank" rel="noopener">Откройте страницу Яндекса</a> и разрешите доступ.</li>
+            <li>Скопируйте показанный токен и вставьте сюда:</li></ol>
+          <div class="row"><input id="yaTok" class="grow" placeholder="токен" autocomplete="off"><button data-a="save">Сохранить</button></div>
+        </details>`;
+    } else {
+      body.innerHTML = `<div class="row"><b class="grow" id="yaPath"></b><button class="sm" data-a="up" title="Вверх">⬆</button></div>
+        <ul id="yaDirs" class="yadirs"><li class="hint">Загрузка…</li></ul>
+        <div class="row" style="margin-top:8px"><button class="primary grow" data-a="add">+ Добавить эту папку</button></div>
+        <div class="row" style="margin-top:8px"><button class="sm" data-a="check">Проверить подключение</button>
+          <span class="grow"></span><button class="sm" data-a="logout">Выйти из Яндекса</button></div>
+        <pre id="yaDiag" class="diag" hidden></pre>`;
+      browse(cwd);
+    }
+    body.querySelectorAll('[data-a]').forEach(b => b.onclick = () => act(b.dataset.a));
+  }
+  async function browse(path) {
+    cwd = path; $('yaPath').textContent = path.replace(/^disk:\/?/, '/') || '/';
+    const ul = $('yaDirs');
+    try {
+      const items = await YA.list(path);
+      const dirs = items.filter(i => i.type === 'dir').sort((a, b) => cmpName(a.name, b.name));
+      const imgs = items.filter(i => i.type === 'file' && (i.media_type === 'image' || IMG_RE.test(i.name))).length;
+      ul.innerHTML = (dirs.length ? '' : '<li class="hint">Подпапок нет</li>') +
+        dirs.map(d => `<li data-p="${esc(d.path)}">📁 ${esc(d.name)}</li>`).join('') +
+        `<li class="hint">Фото в этой папке (без подпапок): ${imgs}</li>`;
+      ul.querySelectorAll('[data-p]').forEach(li => li.onclick = () => browse(li.dataset.p));
+    } catch (e) { ul.innerHTML = `<li class="err">${esc(e.message)}</li>`; if (!YA.token) render(); }
+  }
+  async function act(a) {
+    if (a === 'auto') { sessionStorage.setItem('ya-pending', '1'); location.href = YA.authUrl(false); }
+    else if (a === 'save') { YA.setToken($('yaTok').value); render(); renderSources(); }
+    else if (a === 'logout') { YA.setToken(null); render(); renderSources(); }
+    else if (a === 'up') { if (cwd !== 'disk:/') browse(cwd.replace(/\/[^/]+\/?$/, '') || 'disk:/'); }
+    else if (a === 'add') { addYaFolder(cwd); close(); }
+    else if (a === 'check') diagnose();
+  }
+  // Пошаговая проверка: что из API доступно со страницы
+  async function diagnose() {
+    const out = $('yaDiag'); out.hidden = false; out.textContent = '';
+    const line = (ok, t) => { out.textContent += (ok ? '✓ ' : '✗ ') + t + '\n'; };
+    try { const d = await YA.api('/'); line(true, `API: вход есть (${d.user && (d.user.display_name || d.user.login) || 'пользователь'}), занято ${(d.used_space / 2 ** 30).toFixed(1)} из ${(d.total_space / 2 ** 30).toFixed(0)} ГБ`); }
+    catch (e) { line(false, 'API: ' + e.message); return; }
+    let img = null;
+    try { const j = await YA.api('/resources/last-uploaded', { limit: 20, media_type: 'image', preview_size: 'XL', preview_crop: 'false' }); img = (j.items || [])[0]; line(true, `Список файлов: ок${img ? ` (пример: ${img.name})` : ', но фото не найдено'}`); }
+    catch (e) { line(false, 'Список файлов: ' + e.message); }
+    if (!img) return;
+    line(true, `Метаданные от Яндекса: дата ${img.exif && img.exif.date_time ? 'есть' : 'нет'}, геометка ${img.exif && img.exif.gps_latitude != null ? 'есть' : 'нет'}`);
+    if (img.preview) { try { const b = await YA.preview(img.preview); line(true, `Превью: ок (${Math.round(b.size / 1024)} КБ)`); } catch (e) { line(false, 'Превью: ' + e.message); } }
+    else line(false, 'Превью: Яндекс не вернул ссылку');
+    try { const t0 = performance.now(); const b = await YA.download(img.path); line(true, `Скачивание оригинала: ок (${(b.size / 2 ** 20).toFixed(1)} МБ, ${((performance.now() - t0) / 1000).toFixed(1)} с)`); }
+    catch (e) { line(false, 'Скачивание оригинала: ' + e.message); }
+  }
+  return { open, render };
+})();
+function addYaFolder(path) {
+  if (sources.some(s => s.kind === 'yadisk' && s.path === path)) { status('Эта папка Диска уже в списке'); return; }
+  const name = path === 'disk:/' ? 'Яндекс.Диск' : path.split('/').filter(Boolean).pop();
+  sources.push(newSource({ id: crypto.randomUUID(), name, kind: 'yadisk', path, tree: { name, path: '', children: null } }));
+  renderSources(); persistSources();
+}
+const yaPath = (src, rel) => src.path.replace(/\/$/, '') + (rel ? '/' + rel : '');
+
 async function loadSources() {
   try {
     const saved = (await DB.all('sources')) || [];
     saved.sort((a, b) => a.order - b.order);
     for (const s of saved) {
+      if (s.kind === 'yadisk') {
+        sources.push(newSource({ id: s.id, name: s.name, kind: 'yadisk', path: s.path, enabled: s.enabled !== false,
+          excluded: new Set(s.excluded || []), open: new Set(s.open || []), tree: { name: s.name, path: '', children: null } }));
+        continue;
+      }
       let perm = 'prompt';
       try { perm = await s.handle.queryPermission({ mode: 'read' }); } catch (e) {}
       sources.push(newSource({ id: s.id, name: s.name, kind: 'handle', handle: s.handle, enabled: s.enabled !== false, perm,
@@ -458,12 +628,14 @@ async function loadSources() {
 async function persistSources() {
   dropListCache();
   try {
-    const keep = sources.filter(s => s.kind === 'handle');
+    const keep = sources.filter(s => s.kind === 'handle' || s.kind === 'yadisk');
     const ids = new Set(keep.map(s => s.id));
     for (const old of (await DB.all('sources')) || []) if (!ids.has(old.id)) await DB.del('sources', old.id);
     for (let i = 0; i < sources.length; i++) {
       const s = sources[i];
       if (s.kind === 'handle') await DB.put('sources', { id: s.id, name: s.name, handle: s.handle, enabled: s.enabled, order: i,
+        excluded: [...s.excluded], open: [...s.open] });
+      else if (s.kind === 'yadisk') await DB.put('sources', { id: s.id, name: s.name, kind: 'yadisk', path: s.path, enabled: s.enabled, order: i,
         excluded: [...s.excluded], open: [...s.open] });
     }
   } catch (e) { console.warn('Не удалось сохранить список папок:', e); }
@@ -500,6 +672,12 @@ function addFileList(fileList) {
 }
 async function loadChildren(src, node) {
   if (node.children) return;
+  if (src.kind === 'yadisk') {
+    const items = await YA.list(yaPath(src, node.path));
+    node.children = items.filter(i => i.type === 'dir').sort((a, b) => cmpName(a.name, b.name))
+      .map(i => ({ name: i.name, path: node.path ? node.path + '/' + i.name : i.name, children: null }));
+    return;
+  }
   if (src.perm !== 'granted' && !(await grant(src))) throw new Error('нет доступа к папке');
   const dirs = [];
   for await (const h of node.handle.values()) if (h.kind === 'directory') dirs.push(h);
@@ -526,7 +704,8 @@ function renderNode(s, node, depth, i) {
   const row = document.createElement('div');
   row.className = 'node' + (isSel ? ' sel' : '') + (!own || blocked ? ' off' : '');
   row.style.paddingLeft = (4 + depth * 16) + 'px';
-  const tag = !isRoot ? '' : s.kind === 'files' ? '<span class="tag" title="Доступ только до перезагрузки страницы">сеанс</span>'
+  const tag = !isRoot ? '' : s.kind === 'yadisk' ? `<span class="tag ${YA.token ? '' : 'warn'}" title="Яндекс.Диск: ${esc(s.path)}">${YA.token ? '☁ Я.Диск' : '☁ нет входа'}</span>`
+    : s.kind === 'files' ? '<span class="tag" title="Доступ только до перезагрузки страницы">сеанс</span>'
     : s.perm !== 'granted' ? '<span class="tag warn">нет доступа</span>' : '';
   row.innerHTML = `<button class="tw" ${leaf ? 'disabled' : ''} title="Подпапки">${leaf ? '' : open ? '▾' : '▸'}</button>
     <input type="checkbox" ${own ? 'checked' : ''} ${blocked ? 'disabled' : ''} title="Учитывать в слайд-шоу и на карте">
@@ -567,7 +746,7 @@ function renderNode(s, node, depth, i) {
         node.children.forEach(c => sub.appendChild(renderNode(s, c, depth + 1, i)));
         li.appendChild(sub);
       }
-    } else if (s.perm === 'granted') {         // раскрыто в прошлом сеансе — дочитываем
+    } else if (s.perm === 'granted' && (s.kind !== 'yadisk' || YA.token)) {   // раскрыто в прошлом сеансе — дочитываем
       loadChildren(s, node).then(renderSources, () => {});
     }
   }
@@ -652,6 +831,27 @@ async function listSource(src, opt, onCount) {
     split.sort((a, b) => cmpPaths(a.parts, b.parts));
     for (const { f } of split) out.push(mk(f.rel, f.file.name, async () => f.file));
     onCount && onCount(out.length);
+    return out;
+  }
+  if (src.kind === 'yadisk') {
+    if (!YA.token) throw new Error('нет входа в Яндекс — нажмите «+ Я.Диск»');
+    const ywalk = async (rel) => {
+      const items = await YA.list(yaPath(src, rel));
+      let files = items.filter(i => i.type === 'file' && IMG_RE.test(i.name));
+      const dirs = items.filter(i => i.type === 'dir' && !skip(rel ? rel + '/' + i.name : i.name));
+      files.sort((a, b) => cmpName(a.name, b.name)); dirs.sort((a, b) => cmpName(a.name, b.name));
+      if (rawSkip()) { const plain = new Set(files.filter(i => !RAW_RE.test(i.name)).map(i => baseName(i.name))); files = files.filter(i => !RAW_RE.test(i.name) || !plain.has(baseName(i.name))); }
+      for (const it of files) {
+        const r = rel ? rel + '/' + it.name : it.name, mtime = Date.parse(it.modified) || 0;
+        const e = mk(r, it.name, async () => new File([await YA.download(it.path)], it.name, { lastModified: mtime, type: it.mime_type || '' }));
+        e.cloud = { path: it.path, preview: it.preview, size: it.size, mtime, meta: YA.metaOf(it) };
+        out.push(e);
+      }
+      onCount && onCount(out.length);
+      for (const d of dirs) await ywalk(rel ? rel + '/' + d.name : d.name);
+    };
+    const r0 = opt.root || '';
+    await ywalk(r0);
     return out;
   }
   async function walk(dir, prefix) {
@@ -786,6 +986,7 @@ async function ensureMeta(list, onProgress) {
   async function worker() {
     while (next < todo.length) {
       const e = todo[next++];
+      if (e.cloud) { remember(e, e.cloud.meta); done++; continue; }      // Яндекс уже прислал дату и геометку; модели камеры в API нет
       try {
         const f = await e.getFile();
         const ck = `m2|${e.key}|${f.size}|${f.lastModified}`;
@@ -973,6 +1174,10 @@ const Thumbs = (() => {
     }
   }
   async function makeThumb(entry, big) {
+    if (entry.cloud && entry.cloud.preview) {
+      try { return canvasUrl(await createImageBitmap(await YA.preview(entry.cloud.preview)), big ? 360 : 160, 1); }
+      catch (e) { console.warn('превью Диска:', e.message); }     // не вышло — пробуем из оригинала
+    }
     const file = await entry.getFile();
     if (big) return canvasUrl(await createImageBitmap(await displayBlob(file)), 360, 1);
     try {
@@ -1754,6 +1959,12 @@ else if (!hasFSA) {
   $('addDirCompat').hidden = true;
 }
 renderCams();
+$('addYa').onclick = () => YaUI.open();
+{ // вернулись со страницы входа Яндекса
+  const r = YA.takeFromHash();
+  if (r && !r.ok) notice('Яндекс не выдал доступ: ' + r.error, true);
+  if (r && r.ok && sessionStorage.getItem('ya-pending')) { sessionStorage.removeItem('ya-pending'); YaUI.open(); }
+}
 loadSources();
 </script>
 </body>
