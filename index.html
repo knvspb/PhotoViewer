@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PhotoShow</title>
+<!-- Библиотеки: Leaflet (карта), Leaflet.markercluster (кластеры), exifr (чтение EXIF/GPS) -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js"></script>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --text: #1d2330; --muted: #677084; --line: #dde1e8;
+    --accent: #2563eb; --accent-text: #ffffff; --warn: #b45309; --danger: #b91c1c; --hover: #eef2ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12151b; --panel: #1b1f27; --text: #e6e9ef; --muted: #98a1b3; --line: #2d3340;
+      --accent: #5b8cff; --accent-text: #0b1020; --warn: #f0a94b; --danger: #f87171; --hover: #222a3a;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, "Segoe UI", sans-serif;
+         display: grid; grid-template-columns: 380px 1fr; }
+  aside { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 14px 16px 24px; }
+  main { position: relative; min-width: 0; }
+  #map { position: absolute; inset: 0; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 18px 0 8px; }
+  .hint { color: var(--muted); font-size: 12px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text);
+           border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+  button:hover { background: var(--hover); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button.primary:hover { filter: brightness(1.08); }
+  button:disabled { opacity: .5; cursor: default; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; }
+  #drop { border: 2px dashed var(--line); border-radius: 8px; padding: 10px; text-align: center; color: var(--muted);
+          font-size: 12px; margin-top: 8px; }
+  #drop.over { border-color: var(--accent); color: var(--accent); }
+  #sources { list-style: none; margin: 8px 0 0; padding: 0; }
+  #sources li { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border: 1px solid var(--line);
+                border-radius: 6px; margin-bottom: 4px; }
+  #sources li .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #sources li .tag { font-size: 11px; color: var(--muted); }
+  #sources li .tag.warn { color: var(--warn); }
+  #sources li button { padding: 1px 6px; font-size: 12px; }
+  label.opt { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+  input[type=number] { width: 64px; font: inherit; padding: 3px 4px; border: 1px solid var(--line); border-radius: 4px;
+                       background: var(--panel); color: var(--text); }
+  #status { margin-top: 10px; font-size: 12px; color: var(--muted); min-height: 1.4em; white-space: pre-line; }
+  progress { width: 100%; height: 6px; }
+  .keys { font-size: 12px; color: var(--muted); }
+  .keys kbd { border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; font: 11px monospace; }
+
+  /* --- слайд-шоу --- */
+  #show { position: fixed; inset: 0; background: #000; display: none; z-index: 5000; cursor: none; }
+  #show.open { display: block; }
+  #show.cursor { cursor: default; }
+  #show img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0;
+              transition: opacity var(--fade, .6s) ease; }
+  #show img.on { opacity: 1; }
+  #cap { position: absolute; left: 16px; bottom: 14px; right: 16px; color: #fff; font-size: 14px;
+         text-shadow: 0 1px 3px #000, 0 0 8px #000; pointer-events: none; white-space: pre-line; }
+  #osd { position: absolute; top: 14px; right: 16px; color: #fff; font-size: 13px; background: rgba(0,0,0,.55);
+         padding: 4px 10px; border-radius: 6px; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  #osd.on { opacity: 1; }
+  #tools { position: absolute; top: 12px; left: 16px; display: flex; gap: 6px; opacity: 0; transition: opacity .3s; }
+  #show.cursor #tools { opacity: 1; }
+  #tools button, #mini button { background: rgba(20,20,20,.75); color: #fff; border-color: rgba(255,255,255,.25); }
+  #mini { position: absolute; right: 16px; bottom: 40px; width: min(420px, 45vw); height: min(320px, 45vh);
+          background: #111; border: 1px solid rgba(255,255,255,.3); border-radius: 8px; overflow: hidden;
+          display: none; flex-direction: column; cursor: default; box-shadow: 0 4px 20px rgba(0,0,0,.6); }
+  #mini.on { display: flex; }
+  #miniMap { flex: 1; }
+  #miniBar { display: flex; gap: 6px; align-items: center; padding: 6px; background: #1a1a1a; color: #ddd; font-size: 12px; }
+  #miniBar span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #mini button { padding: 3px 8px; font-size: 12px; }
+  #bar { position: absolute; left: 0; bottom: 0; height: 2px; background: rgba(255,255,255,.5); width: 0; }
+
+  /* --- маркеры --- */
+  .ph { width: 52px; height: 52px; border-radius: 6px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5);
+        background: #888; overflow: hidden; }
+  .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .pop img { max-width: 280px; max-height: 280px; display: block; margin: 0 auto 6px; border-radius: 4px; }
+  .pop .p { font-size: 12px; color: #555; word-break: break-all; }
+  .pop .row { margin-top: 6px; }
+
+  @media (max-width: 760px) {
+    body { grid-template-columns: 1fr; grid-template-rows: auto 60vh; }
+    aside { border-right: 0; border-bottom: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<aside>
+  <h1>PhotoShow</h1>
+  <div class="hint">Слайд-шоу по папкам и карта фото с геометками. Файлы не покидают ваш компьютер.</div>
+
+  <h2>Папки</h2>
+  <div class="row">
+    <button id="addDir" class="primary">+ Добавить папку</button>
+    <button id="addDirCompat" title="Для браузеров без File System Access API (Firefox). Доступ не сохраняется между сеансами.">+ (совместимый режим)</button>
+    <input id="dirInput" type="file" webkitdirectory multiple hidden>
+  </div>
+  <div id="drop">…или перетащите сюда одну или несколько папок из Проводника</div>
+  <div class="row" style="margin-top:6px">
+    <button id="grantAll" hidden>🔓 Восстановить доступ ко всем</button>
+  </div>
+  <ul id="sources"></ul>
+  <div class="hint" id="noSources">Папок пока нет. Галочкой отмечаются папки, участвующие в показе.</div>
+  <label class="opt"><input type="checkbox" id="recursive" checked> Включая подпапки</label>
+
+  <h2>Слайд-шоу</h2>
+  <label class="opt"><input type="radio" name="mode" value="order" checked> По порядку (имена папок / файлов)</label>
+  <label class="opt"><input type="radio" name="mode" value="random"> Полностью случайно</label>
+  <label class="opt"><input type="radio" name="mode" value="nth"> По порядку со случайным шагом, в среднем
+    <input type="number" id="nth" min="2" max="1000" value="5"></label>
+  <div class="hint" style="margin:-2px 0 4px 24px">Например 1, 10, 15, 23… до конца списка, затем следующий проход по ещё не показанным — пока не покажутся все.</div>
+  <label class="opt">Интервал, с <input type="number" id="interval" min="1" max="3600" step="0.5" value="5"></label>
+  <label class="opt"><input type="checkbox" id="caption" checked> Подпись (путь, дата)</label>
+  <label class="opt"><input type="checkbox" id="fade" checked> Плавная смена</label>
+  <label class="opt"><input type="checkbox" id="loop" checked> Зациклить</label>
+  <div class="row" style="margin-top:8px">
+    <button id="start" class="primary grow">▶ Запустить слайд-шоу</button>
+  </div>
+  <div class="keys" style="margin-top:8px">
+    <kbd>←</kbd>/<kbd>→</kbd> назад/вперёд · <kbd>Пробел</kbd> пауза · <kbd>+</kbd>/<kbd>−</kbd> интервал ·
+    <kbd>I</kbd> подпись · <kbd>G</kbd> мини-карта · <kbd>M</kbd> прервать и перейти к карте · <kbd>F</kbd> полный экран · <kbd>Esc</kbd> выход
+  </div>
+
+  <h2>Карта</h2>
+  <div class="row">
+    <button id="scan" class="primary grow">🗺 Найти фото с геометками</button>
+  </div>
+  <div class="hint" style="margin-top:4px">Результаты чтения EXIF кэшируются: повторное сканирование быстрое.</div>
+  <div class="row" style="margin-top:6px">
+    <button id="clearCache">Очистить кэш геометок</button>
+  </div>
+
+  <progress id="prog" hidden></progress>
+  <div id="status"></div>
+</aside>
+<main><div id="map"></div></main>
+
+<div id="show">
+  <img id="imgA" alt=""><img id="imgB" alt="">
+  <div id="cap"></div><div id="osd"></div><div id="bar"></div>
+  <div id="tools"><button data-a="mini" title="Мини-карта (G)">📍 Мини-карта</button><button data-a="map" title="Прервать и перейти к карте (M)">🗺 К карте</button><button data-a="pause" title="Пауза (Пробел)">⏯</button><button data-a="close" title="Выход (Esc)">✕</button></div>
+  <div id="mini"><div id="miniMap"></div>
+    <div id="miniBar"><span id="miniInfo"></span><button data-a="map" title="Прервать показ и открыть большую карту на этом фото">🗺 Перейти к карте</button><button data-a="mini" title="Скрыть (G)">✕</button></div></div>
+</div>
+
+<script>
+'use strict';
+/* ============================ утилиты ============================ */
+const $ = (id) => document.getElementById(id);
+const IMG_RE = /\.(jpe?g|png|gif|webp|bmp|avif|heic|heif|tiff?)$/i;
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const cmpName = (a, b) => collator.compare(a, b);
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const hasFSA = 'showDirectoryPicker' in window;
+
+function status(msg) { $('status').textContent = msg || ''; }
+function progress(v, max) {
+  const p = $('prog');
+  if (v == null) { p.hidden = true; return; }
+  p.hidden = false; p.max = max || 1; p.value = v;
+}
+function store(k, v) { try { localStorage.setItem('photoshow.' + k, JSON.stringify(v)); } catch (e) {} }
+function load(k, d) { try { const v = localStorage.getItem('photoshow.' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
+function fmtExifDate(s) {          // "2024:02:11 12:31:00" -> "2024-02-11 12:31"
+  if (!s || typeof s !== 'string') return '';
+  const m = s.match(/^(\d{4}):(\d{2}):(\d{2})[ T](\d{2}):(\d{2})/);
+  return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : s;
+}
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+
+/* ============================ IndexedDB ============================ */
+const DB = (() => {
+  let dbp = null;
+  function open() {
+    if (!dbp) dbp = new Promise((res, rej) => {
+      const r = indexedDB.open('photoshow', 1);
+      r.onupgradeneeded = () => { r.result.createObjectStore('sources', { keyPath: 'id' }); r.result.createObjectStore('meta'); };
+      r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+    });
+    return dbp;
+  }
+  async function tx(store, mode, fn) {
+    const db = await open();
+    return new Promise((res, rej) => {
+      const t = db.transaction(store, mode); const s = t.objectStore(store); let out;
+      const r = fn(s); if (r) r.onsuccess = () => { out = r.result; };
+      t.oncomplete = () => res(out); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
+    });
+  }
+  return {
+    get: (st, k) => tx(st, 'readonly', s => s.get(k)),
+    all: (st) => tx(st, 'readonly', s => s.getAll()),
+    put: (st, v, k) => tx(st, 'readwrite', s => s.put(v, k)),
+    del: (st, k) => tx(st, 'readwrite', s => s.delete(k)),
+    clear: (st) => tx(st, 'readwrite', s => s.clear()),
+    putMany: (st, entries) => tx(st, 'readwrite', s => { for (const [k, v] of entries) s.put(v, k); }),
+    getMany: async (st, keys) => {
+      const db = await open();
+      return new Promise((res, rej) => {
+        const t = db.transaction(st, 'readonly'); const s = t.objectStore(st); const out = new Array(keys.length);
+        keys.forEach((k, i) => { const r = s.get(k); r.onsuccess = () => { out[i] = r.result; }; });
+        t.oncomplete = () => res(out); t.onerror = () => rej(t.error);
+      });
+    },
+  };
+})();
+
+/* ============================ источники (папки) ============================ */
+// src: { id, name, kind: 'handle'|'files', handle?, files?, enabled, perm: 'granted'|'prompt'|'denied' }
+let sources = [];
+let lastAll = [];          // последний полный упорядоченный список файлов (для «слайд-шоу отсюда»)
+const gpsMem = new Map();  // key -> {lat, lon, date} | null — геометки, уже прочитанные в этом сеансе
+
+async function loadSources() {
+  try {
+    const saved = (await DB.all('sources')) || [];
+    saved.sort((a, b) => a.order - b.order);
+    for (const s of saved) {
+      let perm = 'prompt';
+      try { perm = await s.handle.queryPermission({ mode: 'read' }); } catch (e) {}
+      sources.push({ id: s.id, name: s.name, kind: 'handle', handle: s.handle, enabled: s.enabled !== false, perm });
+    }
+  } catch (e) { console.warn('IndexedDB недоступна:', e); }
+  renderSources();
+}
+async function persistSources() {
+  try {
+    const keep = sources.filter(s => s.kind === 'handle');
+    const ids = new Set(keep.map(s => s.id));
+    for (const old of (await DB.all('sources')) || []) if (!ids.has(old.id)) await DB.del('sources', old.id);
+    for (let i = 0; i < sources.length; i++) {
+      const s = sources[i];
+      if (s.kind === 'handle') await DB.put('sources', { id: s.id, name: s.name, handle: s.handle, enabled: s.enabled, order: i });
+    }
+  } catch (e) { console.warn('Не удалось сохранить список папок:', e); }
+}
+async function addHandle(handle) {
+  for (const s of sources) {
+    if (s.kind === 'handle') { try { if (await s.handle.isSameEntry(handle)) { status(`«${handle.name}» уже в списке`); return; } } catch (e) {} }
+  }
+  sources.push({ id: crypto.randomUUID(), name: handle.name, kind: 'handle', handle, enabled: true, perm: 'granted' });
+}
+function addFileList(fileList) {
+  // webkitdirectory / drop без FSA: группируем по корневой папке
+  const groups = new Map();
+  for (const f of fileList) {
+    const rel = f.webkitRelativePath || f.name;
+    const parts = rel.split('/'); const root = parts.length > 1 ? parts[0] : '(файлы)';
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root).push({ rel: parts.length > 1 ? parts.slice(1).join('/') : rel, file: f });
+  }
+  for (const [name, files] of groups) sources.push({ id: crypto.randomUUID(), name, kind: 'files', files, enabled: true, perm: 'granted' });
+}
+
+function renderSources() {
+  const ul = $('sources'); ul.innerHTML = '';
+  $('noSources').hidden = sources.length > 0;
+  $('grantAll').hidden = !sources.some(s => s.perm !== 'granted');
+  sources.forEach((s, i) => {
+    const li = document.createElement('li');
+    const tag = s.kind === 'files' ? '<span class="tag" title="Доступ только до перезагрузки страницы">сеанс</span>'
+      : s.perm !== 'granted' ? '<span class="tag warn">нет доступа</span>' : '';
+    li.innerHTML = `<input type="checkbox" ${s.enabled ? 'checked' : ''} title="Участвует в показе">
+      <span class="name" title="${esc(s.name)}">📁 ${esc(s.name)}</span>${tag}
+      ${s.perm !== 'granted' ? '<button data-a="grant" title="Разрешить чтение">🔓</button>' : ''}
+      <button data-a="up" title="Выше">↑</button><button data-a="down" title="Ниже">↓</button>
+      <button data-a="del" title="Убрать из списка (файлы не трогаются)">✕</button>`;
+    li.querySelector('input').onchange = (e) => { s.enabled = e.target.checked; persistSources(); };
+    li.querySelectorAll('button').forEach(b => b.onclick = async () => {
+      const a = b.dataset.a;
+      if (a === 'grant') { await grant(s); }
+      else if (a === 'up' && i > 0) { [sources[i - 1], sources[i]] = [sources[i], sources[i - 1]]; }
+      else if (a === 'down' && i < sources.length - 1) { [sources[i + 1], sources[i]] = [sources[i], sources[i + 1]]; }
+      else if (a === 'del') { sources.splice(i, 1); }
+      renderSources(); persistSources();
+    });
+    ul.appendChild(li);
+  });
+}
+async function grant(s) {
+  try { s.perm = await s.handle.requestPermission({ mode: 'read' }); } catch (e) { s.perm = 'prompt'; }
+  return s.perm === 'granted';
+}
+
+$('addDir').onclick = async () => {
+  if (!hasFSA) { status('Этот браузер не поддерживает выбор папок с сохранением доступа (нужен Chrome или Edge). Используйте «совместимый режим».'); return; }
+  try {
+    const h = await window.showDirectoryPicker({ id: 'photoshow', mode: 'read' });
+    await addHandle(h); renderSources(); persistSources();
+  } catch (e) { if (e.name !== 'AbortError') status('Ошибка: ' + e.message); }
+};
+$('addDirCompat').onclick = () => $('dirInput').click();
+$('dirInput').onchange = (e) => { addFileList(e.target.files); e.target.value = ''; renderSources(); };
+$('grantAll').onclick = async () => {
+  // Каждый запрос требует жеста пользователя; Chrome обычно позволяет несколько подряд,
+  // а оставшиеся можно разрешить кнопкой 🔓 у конкретной папки.
+  for (const s of sources) if (s.perm !== 'granted') { if (!(await grant(s))) break; }
+  renderSources();
+};
+const drop = $('drop');
+['dragenter', 'dragover'].forEach(ev => document.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => document.addEventListener(ev, (e) => { e.preventDefault(); if (ev === 'drop' || e.target === document.documentElement) drop.classList.remove('over'); }));
+document.addEventListener('drop', async (e) => {
+  drop.classList.remove('over');
+  const items = [...e.dataTransfer.items].filter(it => it.kind === 'file');
+  if (items.length && items[0].getAsFileSystemHandle) {
+    const hs = await Promise.all(items.map(it => it.getAsFileSystemHandle()));   // вызвать синхронно для всех!
+    let n = 0;
+    for (const h of hs) if (h && h.kind === 'directory') { await addHandle(h); n++; }
+    if (!n) status('Перетащите именно папки.');
+    renderSources(); persistSources();
+  } else {
+    status('В этом браузере перетаскивание папок не поддерживается — используйте кнопку «совместимый режим».');
+  }
+});
+
+/* ============================ обход файлов ============================ */
+// entry: { key, name, path (для подписи), size?, getFile() }
+async function listSource(src, recursive, onCount) {
+  const out = [];
+  if (src.kind === 'files') {
+    const items = src.files.filter(f => IMG_RE.test(f.rel) && (recursive || !f.rel.includes('/')));
+    const split = items.map(f => ({ f, parts: f.rel.split('/') }));
+    split.sort((a, b) => cmpPaths(a.parts, b.parts));
+    for (const { f } of split) out.push({ key: src.id + '/' + f.rel, name: f.file.name, path: src.name + '/' + f.rel, getFile: async () => f.file });
+    onCount && onCount(out.length);
+    return out;
+  }
+  async function walk(dir, prefix) {
+    const files = [], dirs = [];
+    for await (const h of dir.values()) {
+      if (h.kind === 'file') { if (IMG_RE.test(h.name)) files.push(h); }
+      else if (recursive) dirs.push(h);
+    }
+    files.sort((a, b) => cmpName(a.name, b.name));
+    dirs.sort((a, b) => cmpName(a.name, b.name));
+    for (const h of files) out.push({ key: src.id + '/' + prefix + h.name, name: h.name, path: src.name + '/' + prefix + h.name, getFile: () => h.getFile() });
+    onCount && onCount(out.length);
+    for (const d of dirs) await walk(d, prefix + d.name + '/');
+  }
+  await walk(src.handle, '');
+  return out;
+}
+// Порядок внутри папки: сначала файлы, затем подпапки (обход в глубину), всё в «естественном» порядке имён.
+function cmpPaths(a, b) {
+  const n = Math.min(a.length, b.length);
+  for (let i = 0; i < n; i++) {
+    const aFile = i === a.length - 1, bFile = i === b.length - 1;
+    if (a[i] !== b[i] || aFile !== bFile) {
+      if (aFile !== bFile) return aFile ? -1 : 1;
+      const c = cmpName(a[i], b[i]); if (c) return c;
+    }
+  }
+  return a.length - b.length;
+}
+
+async function collectAll() {
+  const active = sources.filter(s => s.enabled);
+  if (!active.length) { status('Добавьте и отметьте хотя бы одну папку.'); return null; }
+  for (const s of active) {
+    if (s.perm !== 'granted' && !(await grant(s))) { renderSources(); status(`Нет доступа к «${s.name}». Нажмите 🔓 рядом с папкой.`); return null; }
+  }
+  renderSources();
+  const recursive = $('recursive').checked;
+  let all = [], base = 0;
+  for (const s of active) {
+    try {
+      const list = await listSource(s, recursive, (n) => status(`Чтение списка файлов… ${base + n}`));
+      all = all.concat(list); base = all.length;
+    } catch (e) { status(`Ошибка чтения «${s.name}»: ${e.message}`); return null; }
+  }
+  if (!all.length) { status('В выбранных папках нет изображений.'); return null; }
+  lastAll = all;
+  return all;
+}
+
+/* ============================ режимы ============================ */
+function buildPlaylist(all, mode, n) {
+  if (mode === 'random') return shuffle(all.slice());
+  if (mode === 'nth') return strideOrder(all, n, -1);
+  return all.slice();
+}
+
+// Режим «по порядку со случайным шагом»: идём по списку вперёд, шаг случайный, равномерно 1…2N−1 (среднее = N).
+// Дошли до конца — новый проход по ещё не показанным, и так пока не покажем все.
+// Результат — перестановка всего списка; у массива есть .passStarts: Map(индекс → {pass, left}) для подсказки на экране.
+// startIdx >= 0: первый проход начинается ровно с этого файла (переход «слайд-шоу отсюда» с карты).
+function strideOrder(all, n, startIdx) {
+  const step = () => 1 + Math.floor(Math.random() * (2 * n - 1));
+  const out = []; out.passStarts = new Map();
+  let rest = all.slice(), pass = 0;
+  while (rest.length) {
+    pass++;
+    const picked = new Set();
+    let pos = (pass === 1 && startIdx >= 0) ? startIdx : step() - 1;
+    if (pos >= rest.length) pos = Math.floor(Math.random() * rest.length);   // остаток короче шага — хотя бы одно фото
+    out.passStarts.set(out.length, { pass, left: rest.length });
+    for (; pos < rest.length; pos += step()) { out.push(rest[pos]); picked.add(pos); }
+    rest = rest.filter((_, i) => !picked.has(i));
+  }
+  return out;
+}
+
+// Плейлист, начинающийся с выбранного файла (переход с карты): дальше — в текущем режиме
+function buildFrom(all, mode, n, startKey) {
+  const i = Math.max(0, all.findIndex(e => e.key === startKey));
+  if (mode === 'random') { const rest = all.slice(); const [first] = rest.splice(i, 1); return [first, ...shuffle(rest)]; }
+  if (mode === 'nth') return strideOrder(all, n, i);
+  return all;            // по порядку: весь список, старт с индекса i (см. startIndex)
+}
+async function readGps(entry, file) {
+  if (gpsMem.has(entry.key)) return gpsMem.get(entry.key);
+  const x = await exifr.parse(file || await entry.getFile(), { tiff: true, ifd0: false, exif: { pick: ['DateTimeOriginal'] }, gps: true,
+    ifd1: false, xmp: false, icc: false, iptc: false, jfif: false, interop: false, reviveValues: false }).catch(() => null);
+  const lat = x && x.latitude, lon = x && x.longitude;
+  const v = Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0) ? { lat, lon, date: x.DateTimeOriginal || '' } : null;
+  gpsMem.set(entry.key, v);
+  return v;
+}
+
+/* ============================ мини-карта внутри слайд-шоу ============================ */
+const Mini = (() => {
+  const box = $('mini'), info = $('miniInfo');
+  let map = null, marker = null, ctx = null, visible = load('mini', false), current = null, ctxCount = -1;
+  function ensure() {
+    if (map) return;
+    map = L.map('miniMap', { zoomControl: true, attributionControl: true }).setView([30, 10], 2);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
+    ctx = L.layerGroup().addTo(map);
+    marker = L.circleMarker([0, 0], { radius: 9, color: '#e11d48', weight: 3, fillOpacity: .35 });
+  }
+  function drawContext() {   // остальные фото с геометками — серыми точками
+    const pts = MapView.points;
+    if (pts.length === ctxCount) return; ctxCount = pts.length;
+    ctx.clearLayers();
+    const r = L.canvas();
+    for (const p of pts) L.circleMarker([p.lat, p.lon], { renderer: r, radius: 3, color: '#2563eb', weight: 1, fillOpacity: .6, interactive: false }).addTo(ctx);
+  }
+  async function update(entry, file) {
+    current = { entry, file };
+    if (!visible) return;
+    ensure(); drawContext();
+    const g = await readGps(entry, file);
+    if (!current || current.entry !== entry) return;
+    if (!g) { info.textContent = 'Нет геометки: ' + entry.name; marker.remove(); return; }
+    info.textContent = `${entry.name}${g.date ? ' · ' + fmtExifDate(g.date) : ''}`;
+    marker.setLatLng([g.lat, g.lon]).addTo(map);
+    map.setView([g.lat, g.lon], Math.max(map.getZoom(), 13), { animate: true });
+  }
+  function toggle(force) {
+    visible = force == null ? !visible : force; store('mini', visible);
+    box.classList.toggle('on', visible);
+    if (visible) { ensure(); map.invalidateSize(); if (current) update(current.entry, current.file); }
+  }
+  box.addEventListener('click', e => e.stopPropagation());
+  box.addEventListener('wheel', e => e.stopPropagation(), { passive: true });
+  return { update, toggle, get visible() { return visible; }, sync: () => box.classList.toggle('on', visible) };
+})();
+
+/* ============================ слайд-шоу ============================ */
+const Show = (() => {
+  const el = $('show'), imgs = [$('imgA'), $('imgB')], cap = $('cap'), osd = $('osd'), bar = $('bar');
+  let list = [], idx = 0, cur = 0, timer = null, paused = false, open = false, token = 0;
+  let rebuild = null, intervalMs = 5000, loop = true, showCap = true, errorsInRow = 0;
+  const cache = new Map();   // idx -> Promise<{url, file}>
+  let osdTimer, cursorTimer;
+
+  function prep(i) {
+    if (!cache.has(i)) {
+      const e = list[i];
+      const p = (async () => {
+        const file = await e.getFile();
+        const url = URL.createObjectURL(file);
+        const im = new Image(); im.src = url;
+        try { await im.decode(); return { url, file, ok: true }; }
+        catch (err) { return { url, file, ok: false }; }
+      })();
+      cache.set(i, p);
+    }
+    return cache.get(i);
+  }
+  function trim() {
+    for (const [i, p] of cache) if (Math.abs(i - idx) > 3) { p.then(r => URL.revokeObjectURL(r.url)).catch(() => {}); cache.delete(i); }
+  }
+  function flash(t) { osd.textContent = t; osd.classList.add('on'); clearTimeout(osdTimer); osdTimer = setTimeout(() => osd.classList.remove('on'), 1200); }
+
+  async function display(i) {
+    const my = ++token; clearTimeout(timer); bar.style.transition = 'none'; bar.style.width = '0';
+    if (i >= list.length) {
+      if (!loop) { flash('Конец'); paused = true; idx = list.length - 1; return; }
+      if (rebuild) { list = rebuild(); for (const p of cache.values()) p.then(r => URL.revokeObjectURL(r.url)); cache.clear(); }
+      i = 0;
+    }
+    if (i < 0) i = list.length - 1;
+    idx = i;
+    let r;
+    try { r = await prep(i); } catch (e) { r = { ok: false, err: e }; }
+    if (my !== token) return;
+    if (!r.ok) {                    // например HEIC в Chrome или битый файл — пропускаем
+      console.warn('Не удалось показать', list[i].path, r.err || '');
+      if (++errorsInRow > 50) { flash('Слишком много нечитаемых файлов подряд'); return; }
+      return display(i + 1);
+    }
+    errorsInRow = 0;
+    const next = imgs[cur ^ 1], prev = imgs[cur];
+    next.src = r.url; next.classList.add('on'); prev.classList.remove('on'); cur ^= 1;
+    const e = list[i];
+    cap.textContent = '';
+    if (showCap) {
+      cap.textContent = `${e.path}\n${i + 1} / ${list.length}`;
+      exifr.parse(r.file, { pick: ['DateTimeOriginal'], reviveValues: false }).then(x => {
+        if (my === token && x && x.DateTimeOriginal) cap.textContent = `${e.path}  ·  ${fmtExifDate(x.DateTimeOriginal)}\n${i + 1} / ${list.length}`;
+      }).catch(() => {});
+    }
+    Mini.update(e, r.file);
+    const ps = list.passStarts && list.passStarts.get(i);
+    if (ps && ps.pass > 1) flash(`Проход ${ps.pass}: осталось ${ps.left} непоказанных`);
+    // предзагрузка соседей
+    if (i + 1 < list.length) prep(i + 1); if (i > 0) prep(i - 1); trim();
+    schedule();
+  }
+  function schedule() {
+    clearTimeout(timer);
+    if (paused || !open) return;
+    bar.style.transition = 'none'; bar.style.width = '0'; void bar.offsetWidth;
+    bar.style.transition = `width ${intervalMs}ms linear`; bar.style.width = '100%';
+    const my = token;
+    timer = setTimeout(() => { if (my === token) display(idx + 1); }, intervalMs);
+  }
+  function close() {
+    open = false; token++; clearTimeout(timer); el.classList.remove('open');
+    for (const p of cache.values()) p.then(r => URL.revokeObjectURL(r.url)).catch(() => {});
+    cache.clear(); imgs.forEach(im => { im.removeAttribute('src'); im.classList.remove('on'); });
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  }
+  async function start(opts) {
+    list = opts.list; rebuild = opts.rebuild || null; intervalMs = opts.interval * 1000; loop = opts.loop;
+    showCap = opts.caption; paused = !!opts.paused; errorsInRow = 0;
+    el.style.setProperty('--fade', opts.fade ? '.6s' : '0s');
+    el.classList.add('open'); open = true; Mini.sync();
+    try { await el.requestFullscreen(); } catch (e) {}
+    display(opts.startAt || 0);
+    if (paused) flash('Пауза');
+  }
+  // Прервать показ и перейти к большой карте на текущем фото
+  async function toMap() {
+    const e = list[idx]; if (!e) return;
+    const g = await readGps(e);
+    close();
+    if (!MapView.points.length && lastAll.length) await scanGps(lastAll);   // карта ещё не построена
+    if (g) MapView.focus(g.lat, g.lon, e);
+    else status(`У «${e.name}» нет геометки. Выберите на карте другое фото и нажмите «▶ Слайд-шоу отсюда».`);
+  }
+  function togglePause() {
+    paused = !paused; flash(paused ? 'Пауза' : '▶');
+    if (paused) { clearTimeout(timer); bar.style.transition = 'none'; bar.style.width = '0'; } else schedule();
+  }
+  $('tools').addEventListener('click', (ev) => ev.stopPropagation());
+  [...document.querySelectorAll('#tools button, #mini button')].forEach(b => b.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const a = b.dataset.a;
+    if (a === 'mini') Mini.toggle(); else if (a === 'map') toMap(); else if (a === 'pause') togglePause(); else if (a === 'close') close();
+  }));
+
+  document.addEventListener('keydown', (ev) => {
+    if (!open) return;
+    const k = ev.key;
+    if (k === 'ArrowRight' || k === 'PageDown') display(idx + 1);
+    else if (k === 'ArrowLeft' || k === 'PageUp') display(idx - 1);
+    else if (k === ' ') togglePause();
+    else if (k === 'Escape') close();
+    else if (k === 'Home') display(0);
+    else if (k === '+' || k === '=') { intervalMs = Math.min(3600e3, intervalMs + 1000); flash(`Интервал ${intervalMs / 1000} с`); schedule(); }
+    else if (k === '-' || k === '_') { intervalMs = Math.max(1000, intervalMs - 1000); flash(`Интервал ${intervalMs / 1000} с`); schedule(); }
+    else if (k === 'i' || k === 'I' || k === 'ш' || k === 'Ш') { showCap = !showCap; cap.hidden = !showCap; if (showCap) display(idx); }
+    else if (k === 'm' || k === 'M' || k === 'ь' || k === 'Ь') toMap();
+    else if (k === 'g' || k === 'G' || k === 'п' || k === 'П') Mini.toggle();
+    else if (k === 'f' || k === 'F' || k === 'а' || k === 'А') { document.fullscreenElement ? document.exitFullscreen() : el.requestFullscreen().catch(() => {}); }
+    else return;
+    ev.preventDefault();
+  });
+  el.addEventListener('click', (ev) => { ev.clientX < innerWidth / 3 ? display(idx - 1) : display(idx + 1); });
+  el.addEventListener('wheel', (ev) => { ev.deltaY > 0 ? display(idx + 1) : display(idx - 1); }, { passive: true });
+  el.addEventListener('mousemove', () => { el.classList.add('cursor'); clearTimeout(cursorTimer); cursorTimer = setTimeout(() => el.classList.remove('cursor'), 1500); });
+  return { start, close, get open() { return open; } };
+})();
+
+function modeOpts() {
+  return { mode: document.querySelector('input[name=mode]:checked').value, n: Math.max(2, parseInt($('nth').value) || 5) };
+}
+function showOptions() {
+  return {
+    interval: Math.max(1, parseFloat($('interval').value) || 5),
+    caption: $('caption').checked, fade: $('fade').checked, loop: $('loop').checked,
+  };
+}
+$('start').onclick = async () => {
+  saveSettings();
+  const all = await collectAll(); if (!all) return;
+  const { mode, n } = modeOpts();
+  const rebuild = () => buildPlaylist(all, mode, n);
+  const list = rebuild();
+  status(`Файлов найдено: ${all.length}, в показе: ${list.length}`);
+  Show.start({ list, rebuild: mode === 'order' ? null : rebuild, ...showOptions() });
+};
+
+/* ============================ карта ============================ */
+const MapView = (() => {
+  const map = L.map('map', { zoomControl: true, worldCopyJump: true }).setView([30, 10], 2);
+  const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
+  const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    { maxZoom: 17, attribution: '&copy; OpenStreetMap, SRTM | &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)' });
+  const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    { maxZoom: 19, attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community' });
+  osm.addTo(map);
+  L.control.layers({ 'OpenStreetMap': osm, 'OpenTopoMap': topo, 'Спутник (Esri)': sat }).addTo(map);
+  L.control.scale({ imperial: false }).addTo(map);
+
+  let cluster = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 50 });
+  map.addLayer(cluster);
+  let points = [];         // { lat, lon, date, entry }
+  let tempMarker = null;
+
+  /* миниатюры: сначала встроенная в EXIF (быстро), иначе — уменьшение полного файла */
+  const thumbs = new Map();
+  let active = 0; const queue = [];
+  function thumb(entry) {
+    if (!thumbs.has(entry.key)) thumbs.set(entry.key, new Promise((res) => { queue.push({ entry, res }); pump(); }));
+    return thumbs.get(entry.key);
+  }
+  function pump() {
+    while (active < 3 && queue.length) {
+      const { entry, res } = queue.shift(); active++;
+      makeThumb(entry).then(res, () => res(null)).finally(() => { active--; pump(); });
+    }
+  }
+  async function makeThumb(entry) {
+    const file = await entry.getFile();
+    try {
+      const t = await exifr.thumbnail(file);
+      if (t && t.length) {
+        const bmp = await createImageBitmap(new Blob([t], { type: 'image/jpeg' }));
+        const o = await exifr.orientation(file).catch(() => 1);
+        return canvasUrl(bmp, 160, o);
+      }
+    } catch (e) {}
+    const bmp = await createImageBitmap(file);          // применяет EXIF-ориентацию сам
+    return canvasUrl(bmp, 160, 1);
+  }
+  async function canvasUrl(bmp, size, orient) {
+    const rot = orient === 6 || orient === 8 || orient === 5 || orient === 7;
+    const w0 = bmp.width, h0 = bmp.height, s = size / Math.max(w0, h0);
+    const w = Math.max(1, Math.round(w0 * s)), h = Math.max(1, Math.round(h0 * s));
+    const c = document.createElement('canvas'); c.width = rot ? h : w; c.height = rot ? w : h;
+    const g = c.getContext('2d');
+    g.translate(c.width / 2, c.height / 2);
+    if (orient === 3) g.rotate(Math.PI); else if (orient === 6) g.rotate(Math.PI / 2); else if (orient === 8) g.rotate(-Math.PI / 2);
+    g.drawImage(bmp, -w / 2, -h / 2, w, h); bmp.close && bmp.close();
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8));
+    return URL.createObjectURL(blob);
+  }
+
+  function makeMarker(p, i) {
+    const m = L.marker([p.lat, p.lon], { icon: L.divIcon({ className: '', html: '<div class="ph"><img alt=""></div>', iconSize: [52, 52], iconAnchor: [26, 26] }) });
+    m.on('add', () => {
+      thumb(p.entry).then(url => { const img = m.getElement() && m.getElement().querySelector('img'); if (url && img) img.src = url; });
+    });
+    m._pIndex = i;
+    m.bindPopup(() => popupHtml(p, i), { maxWidth: 320, minWidth: 200 });
+    m.on('popupopen', (ev) => {
+      const box = ev.popup.getElement();
+      thumb(p.entry).then(url => { const img = box.querySelector('img'); if (url && img) img.src = url; });
+      // крупное превью из оригинала
+      p.entry.getFile().then(f => { const img = box.querySelector('img'); const u = URL.createObjectURL(f); img.onload = null; img.src = u; ev.popup.once('remove', () => URL.revokeObjectURL(u)); }).catch(() => {});
+      box.querySelector('[data-a=show]').onclick = () => startFrom(i, false);
+      box.querySelector('[data-a=open]').onclick = () => startFrom(i, true);
+    });
+    return m;
+  }
+  function popupHtml(p) {
+    return `<div class="pop"><img alt=""><b>${esc(p.entry.name)}</b>
+      <div class="p">${esc(p.entry.path)}</div>
+      <div class="p">${p.date ? '📅 ' + esc(fmtExifDate(p.date)) + ' · ' : ''}${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}</div>
+      <div class="row"><button data-a="open">🔍 Открыть</button><button data-a="show">▶ Слайд-шоу отсюда</button></div></div>`;
+  }
+  // «Слайд-шоу отсюда»: весь набор папок (включая фото без геометок), начиная с выбранного, в текущем режиме
+  function startFrom(i, paused) {
+    const all = lastAll.length ? lastAll : points.map(p => p.entry);
+    const { mode, n } = modeOpts();
+    const key = points[i].entry.key;
+    const list = paused ? [points[i].entry] : buildFrom(all, mode, n, key);
+    const startAt = !paused && mode === 'order' ? Math.max(0, all.findIndex(e => e.key === key)) : 0;
+    Show.start({ list, startAt, paused, rebuild: paused ? null : () => buildPlaylist(all, mode, n), ...showOptions(), loop: paused ? false : $('loop').checked });
+  }
+
+  function setPoints(pts) {
+    points = pts;
+    cluster.clearLayers();
+    cluster.addLayers(pts.map(makeMarker));
+    if (pts.length) map.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lon])).pad(0.1), { maxZoom: 15 });
+  }
+  function focus(lat, lon, entry) {
+    if (tempMarker) map.removeLayer(tempMarker);
+    const k = points.findIndex(p => p.entry.key === entry.key);
+    if (k >= 0) {   // фото уже на карте — раскрываем кластер и открываем его карточку
+      const m = cluster.getLayers().find(l => l._pIndex === k);
+      if (m) { cluster.zoomToShowLayer(m, () => m.openPopup()); return; }
+    }
+    tempMarker = L.circleMarker([lat, lon], { radius: 10, color: '#e11d48', weight: 3, fillOpacity: 0.2 }).addTo(map)
+      .bindPopup(esc(entry.path)).openPopup();
+    map.setView([lat, lon], 15);
+  }
+  return { setPoints, focus, map, get points() { return points; } };
+})();
+
+/* сканирование геометок с кэшем в IndexedDB (ключ: путь + размер + дата изменения) */
+async function scanGps(given) {
+  saveSettings();
+  const all = Array.isArray(given) ? given : await collectAll(); if (!all) return;
+  $('scan').disabled = true;
+  const t0 = performance.now();
+  const results = new Array(all.length);
+  let done = 0, fromCache = 0, next = 0;
+  const pending = [];
+  async function worker() {
+    while (next < all.length) {
+      const i = next++; const e = all[i];
+      try {
+        const f = await e.getFile();
+        const ck = `gps|${e.key}|${f.size}|${f.lastModified}`;
+        let v = await DB.get('meta', ck);
+        if (v) fromCache++;
+        else {
+          const x = await exifr.parse(f, { tiff: true, ifd0: { pick: ['Orientation'] }, exif: { pick: ['DateTimeOriginal'] }, gps: true,
+            ifd1: false, xmp: false, icc: false, iptc: false, jfif: false, interop: false, reviveValues: false }).catch(() => null);
+          const lat = x && x.latitude, lon = x && x.longitude;
+          const ok = Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
+          v = ok ? { lat, lon, date: x.DateTimeOriginal || '' } : { none: 1 };
+          pending.push([ck, v]);
+          if (pending.length >= 200) await DB.putMany('meta', pending.splice(0)).catch(() => {});
+        }
+        gpsMem.set(e.key, v.none ? null : v);
+        if (!v.none) results[i] = { lat: v.lat, lon: v.lon, date: v.date, entry: e };
+      } catch (err) { console.warn(e.path, err); }
+      done++;
+      if (done % 25 === 0 || done === all.length) { progress(done, all.length); status(`Чтение геометок: ${done} / ${all.length}`); }
+    }
+  }
+  try {
+    await Promise.all(Array.from({ length: 8 }, worker));
+    if (pending.length) await DB.putMany('meta', pending).catch(() => {});
+    const pts = results.filter(Boolean);
+    MapView.setPoints(pts);
+    const sec = ((performance.now() - t0) / 1000).toFixed(1);
+    status(`Фото с геометками: ${pts.length} из ${all.length} (из кэша: ${fromCache}, ${sec} с).`);
+  } finally { progress(null); $('scan').disabled = false; }
+}
+$('scan').onclick = () => scanGps();
+$('clearCache').onclick = async () => { await DB.clear('meta').catch(() => {}); status('Кэш геометок очищен.'); };
+
+/* ============================ настройки ============================ */
+function saveSettings() {
+  store('settings', {
+    recursive: $('recursive').checked, mode: document.querySelector('input[name=mode]:checked').value,
+    nth: $('nth').value, interval: $('interval').value, caption: $('caption').checked, fade: $('fade').checked, loop: $('loop').checked,
+  });
+}
+(function restore() {
+  const s = load('settings', null); if (!s) return;
+  $('recursive').checked = s.recursive !== false;
+  const r = document.querySelector(`input[name=mode][value="${s.mode}"]`); if (r) r.checked = true;
+  if (s.nth) $('nth').value = s.nth; if (s.interval) $('interval').value = s.interval;
+  $('caption').checked = s.caption !== false; $('fade').checked = s.fade !== false; $('loop').checked = s.loop !== false;
+})();
+document.querySelectorAll('aside input').forEach(i => i.addEventListener('change', saveSettings));
+
+if (!hasFSA) {
+  status('Внимание: браузер не поддерживает File System Access API — доступен только «совместимый режим» (папки нужно выбирать при каждом открытии). Рекомендуется Chrome или Edge.');
+}
+loadSources();
+</script>
+</body>
+</html>
