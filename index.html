@@ -44,13 +44,19 @@
   #drop { border: 2px dashed var(--line); border-radius: 8px; padding: 10px; text-align: center; color: var(--muted);
           font-size: 12px; margin-top: 8px; }
   #drop.over { border-color: var(--accent); color: var(--accent); }
-  #sources { list-style: none; margin: 8px 0 0; padding: 0; }
-  #sources li { display: flex; align-items: center; gap: 6px; padding: 5px 6px; border: 1px solid var(--line);
-                border-radius: 6px; margin-bottom: 4px; }
-  #sources li .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  #sources li .tag { font-size: 11px; color: var(--muted); }
-  #sources li .tag.warn { color: var(--warn); }
-  #sources li button { padding: 1px 6px; font-size: 12px; }
+  #sources, #sources ul { list-style: none; margin: 0; padding: 0; }
+  #sources { margin-top: 8px; }
+  #sources > li { border: 1px solid var(--line); border-radius: 6px; margin-bottom: 4px; padding: 2px 0; }
+  .node { display: flex; align-items: center; gap: 4px; padding: 2px 6px; border-radius: 4px; }
+  .node.sel { background: var(--hover); box-shadow: inset 0 0 0 1px var(--accent); }
+  .node.off .name { opacity: .5; }
+  .node .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .node .tag { font-size: 11px; color: var(--muted); }
+  .node .tag.warn { color: var(--warn); }
+  .node button { padding: 1px 6px; font-size: 12px; }
+  .node .tw { border: 0; background: none; width: 18px; padding: 0; color: var(--muted); }
+  .node .tw:disabled { cursor: default; }
+  select { font: inherit; padding: 3px 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); }
   label.opt { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
   input[type=number] { width: 64px; font: inherit; padding: 3px 4px; border: 1px solid var(--line); border-radius: 4px;
                        background: var(--panel); color: var(--text); }
@@ -122,10 +128,16 @@
     <button id="grantAll" hidden>🔓 Восстановить доступ ко всем</button>
   </div>
   <ul id="sources"></ul>
-  <div class="hint" id="noSources">Папок пока нет. Галочкой отмечаются папки, участвующие в показе.</div>
-  <label class="opt"><input type="checkbox" id="recursive" checked> Включая подпапки</label>
+  <div class="hint" id="noSources">Папок пока нет.</div>
+  <div class="hint">▸ — подпапки · флажок — учитывать в слайд-шоу и на карте · щелчок по имени — выбрать папку</div>
 
   <h2>Слайд-шоу</h2>
+  <div class="hint">Что показывать:</div>
+  <label class="opt"><input type="radio" name="scope" value="checked" checked> Отмеченные папки</label>
+  <label class="opt"><input type="radio" name="scope" value="selected"> Выбранную папку <span id="selLabel" class="hint"></span></label>
+  <label class="opt"><input type="radio" name="scope" value="map"> Фото, видимые сейчас на карте</label>
+  <label class="opt"><input type="radio" name="scope" value="all"> Все фото всех папок (без учёта флажков)</label>
+  <div class="hint" style="margin-top:6px">Порядок:</div>
   <label class="opt"><input type="radio" name="mode" value="order" checked> По порядку (имена папок / файлов)</label>
   <label class="opt"><input type="radio" name="mode" value="random"> Полностью случайно</label>
   <label class="opt"><input type="radio" name="mode" value="nth"> По порядку со случайным шагом, в среднем
@@ -147,7 +159,9 @@
   <div class="row">
     <button id="scan" class="primary grow">🗺 Найти фото с геометками</button>
   </div>
-  <div class="hint" style="margin-top:4px">Результаты чтения EXIF кэшируются: повторное сканирование быстрое.</div>
+  <div class="hint" style="margin-top:4px">Учитываются отмеченные папки. Результаты чтения EXIF кэшируются: повторное сканирование быстрое.</div>
+  <label class="opt">Плотность <input type="range" id="density" min="1" max="10" value="6" class="grow"> <span id="densityVal" class="hint"></span></label>
+  <label class="opt">Миниатюры <select id="thumbSize"><option value="36">мелкие</option><option value="52" selected>средние</option><option value="72">крупные</option></select></label>
   <div class="row" style="margin-top:6px">
     <button id="clearCache">Очистить кэш геометок</button>
   </div>
@@ -238,11 +252,29 @@ const DB = (() => {
 })();
 
 /* ============================ источники (папки) ============================ */
-// src: { id, name, kind: 'handle'|'files', handle?, files?, enabled, perm: 'granted'|'prompt'|'denied' }
+// src: { id, name, kind: 'handle'|'files', handle?, files?, enabled, perm,
+//        excluded: Set<путь папки>, open: Set<путь папки>, tree: узел }
+// узел дерева: { name, path ('' — корень источника), handle?, children: null (ещё не прочитаны) | узел[] }
 let sources = [];
-let lastAll = [];          // последний полный упорядоченный список файлов (для «слайд-шоу отсюда»)
+let mapAll = [];           // список, по которому построена карта (отмеченные папки)
+let lastShowAll = [];      // полный упорядоченный список последнего слайд-шоу
+let selected = load('selected', null);   // { srcId, path } — папка, выбранная щелчком по имени
 const gpsMem = new Map();  // key -> {lat, lon, date} | null — геометки, уже прочитанные в этом сеансе
 
+const under = (p, dir) => dir === '' || p === dir || p.startsWith(dir + '/');
+const parentOf = (p) => p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '';
+// Исключена ли папка dir. from: учитывать только исключения строго внутри from (для «выбранной папки»).
+function isExcluded(src, dir, from = null) {
+  for (const x of src.excluded) if (under(dir, x) && (from == null || (x !== from && under(x, from)))) return true;
+  return false;
+}
+function hasExcludedInside(src, dir) { for (const x of src.excluded) if (x !== dir && under(x, dir)) return true; return false; }
+// Входит ли файл в «отмеченные папки» (для фильтра карты без пересканирования)
+function inChecked(e) { const s = sources.find(x => x.id === e.srcId); return !!s && s.enabled && !isExcluded(s, e.dir); }
+
+function newSource(o) {
+  return Object.assign({ enabled: true, perm: 'granted', excluded: new Set(), open: new Set() }, o);
+}
 async function loadSources() {
   try {
     const saved = (await DB.all('sources')) || [];
@@ -250,7 +282,9 @@ async function loadSources() {
     for (const s of saved) {
       let perm = 'prompt';
       try { perm = await s.handle.queryPermission({ mode: 'read' }); } catch (e) {}
-      sources.push({ id: s.id, name: s.name, kind: 'handle', handle: s.handle, enabled: s.enabled !== false, perm });
+      sources.push(newSource({ id: s.id, name: s.name, kind: 'handle', handle: s.handle, enabled: s.enabled !== false, perm,
+        excluded: new Set(s.excluded || []), open: new Set(s.open || []),
+        tree: { name: s.name, path: '', handle: s.handle, children: null } }));
     }
   } catch (e) { console.warn('IndexedDB недоступна:', e); }
   renderSources();
@@ -262,7 +296,8 @@ async function persistSources() {
     for (const old of (await DB.all('sources')) || []) if (!ids.has(old.id)) await DB.del('sources', old.id);
     for (let i = 0; i < sources.length; i++) {
       const s = sources[i];
-      if (s.kind === 'handle') await DB.put('sources', { id: s.id, name: s.name, handle: s.handle, enabled: s.enabled, order: i });
+      if (s.kind === 'handle') await DB.put('sources', { id: s.id, name: s.name, handle: s.handle, enabled: s.enabled, order: i,
+        excluded: [...s.excluded], open: [...s.open] });
     }
   } catch (e) { console.warn('Не удалось сохранить список папок:', e); }
 }
@@ -270,10 +305,11 @@ async function addHandle(handle) {
   for (const s of sources) {
     if (s.kind === 'handle') { try { if (await s.handle.isSameEntry(handle)) { status(`«${handle.name}» уже в списке`); return; } } catch (e) {} }
   }
-  sources.push({ id: crypto.randomUUID(), name: handle.name, kind: 'handle', handle, enabled: true, perm: 'granted' });
+  sources.push(newSource({ id: crypto.randomUUID(), name: handle.name, kind: 'handle', handle,
+    tree: { name: handle.name, path: '', handle, children: null } }));
 }
 function addFileList(fileList) {
-  // webkitdirectory / drop без FSA: группируем по корневой папке
+  // webkitdirectory / drop без FSA: группируем по корневой папке, дерево строим сразу из путей
   const groups = new Map();
   for (const f of fileList) {
     const rel = f.webkitRelativePath || f.name;
@@ -281,33 +317,100 @@ function addFileList(fileList) {
     if (!groups.has(root)) groups.set(root, []);
     groups.get(root).push({ rel: parts.length > 1 ? parts.slice(1).join('/') : rel, file: f });
   }
-  for (const [name, files] of groups) sources.push({ id: crypto.randomUUID(), name, kind: 'files', files, enabled: true, perm: 'granted' });
+  for (const [name, files] of groups) {
+    const tree = { name, path: '', children: [] }, idx = new Map([['', tree]]);
+    for (const f of files) {
+      const dirs = f.rel.split('/').slice(0, -1);
+      for (let k = 0; k < dirs.length; k++) {
+        const p = dirs.slice(0, k + 1).join('/');
+        if (!idx.has(p)) { const n = { name: dirs[k], path: p, children: [] }; idx.get(parentOf(p)).children.push(n); idx.set(p, n); }
+      }
+    }
+    for (const n of idx.values()) n.children.sort((a, b) => cmpName(a.name, b.name));
+    sources.push(newSource({ id: crypto.randomUUID(), name, kind: 'files', files, tree }));
+  }
+}
+async function loadChildren(src, node) {
+  if (node.children) return;
+  if (src.perm !== 'granted' && !(await grant(src))) throw new Error('нет доступа к папке');
+  const dirs = [];
+  for await (const h of node.handle.values()) if (h.kind === 'directory') dirs.push(h);
+  dirs.sort((a, b) => cmpName(a.name, b.name));
+  node.children = dirs.map(h => ({ name: h.name, path: node.path ? node.path + '/' + h.name : h.name, handle: h, children: null }));
 }
 
 function renderSources() {
   const ul = $('sources'); ul.innerHTML = '';
   $('noSources').hidden = sources.length > 0;
   $('grantAll').hidden = !sources.some(s => s.perm !== 'granted');
-  sources.forEach((s, i) => {
-    const li = document.createElement('li');
-    const tag = s.kind === 'files' ? '<span class="tag" title="Доступ только до перезагрузки страницы">сеанс</span>'
-      : s.perm !== 'granted' ? '<span class="tag warn">нет доступа</span>' : '';
-    li.innerHTML = `<input type="checkbox" ${s.enabled ? 'checked' : ''} title="Участвует в показе">
-      <span class="name" title="${esc(s.name)}">📁 ${esc(s.name)}</span>${tag}
-      ${s.perm !== 'granted' ? '<button data-a="grant" title="Разрешить чтение">🔓</button>' : ''}
-      <button data-a="up" title="Выше">↑</button><button data-a="down" title="Ниже">↓</button>
-      <button data-a="del" title="Убрать из списка (файлы не трогаются)">✕</button>`;
-    li.querySelector('input').onchange = (e) => { s.enabled = e.target.checked; persistSources(); };
-    li.querySelectorAll('button').forEach(b => b.onclick = async () => {
-      const a = b.dataset.a;
-      if (a === 'grant') { await grant(s); }
-      else if (a === 'up' && i > 0) { [sources[i - 1], sources[i]] = [sources[i], sources[i - 1]]; }
-      else if (a === 'down' && i < sources.length - 1) { [sources[i + 1], sources[i]] = [sources[i], sources[i + 1]]; }
-      else if (a === 'del') { sources.splice(i, 1); }
-      renderSources(); persistSources();
-    });
-    ul.appendChild(li);
+  sources.forEach((s, i) => ul.appendChild(renderNode(s, s.tree, 0, i)));
+  const sel = selected && sources.find(x => x.id === selected.srcId);
+  $('selLabel').textContent = sel ? `— «${sel.name}${selected.path ? '/' + selected.path : ''}»` : '— щёлкните по имени папки в списке';
+}
+function renderNode(s, node, depth, i) {
+  const li = document.createElement('li');
+  const isRoot = depth === 0;
+  const open = s.open.has(node.path);
+  const leaf = node.children && node.children.length === 0;
+  const own = isRoot ? s.enabled : !s.excluded.has(node.path);
+  const blocked = !isRoot && (!s.enabled || isExcluded(s, parentOf(node.path)));   // выключено выше по дереву
+  const isSel = selected && selected.srcId === s.id && selected.path === node.path;
+  const row = document.createElement('div');
+  row.className = 'node' + (isSel ? ' sel' : '') + (!own || blocked ? ' off' : '');
+  row.style.paddingLeft = (4 + depth * 16) + 'px';
+  const tag = !isRoot ? '' : s.kind === 'files' ? '<span class="tag" title="Доступ только до перезагрузки страницы">сеанс</span>'
+    : s.perm !== 'granted' ? '<span class="tag warn">нет доступа</span>' : '';
+  row.innerHTML = `<button class="tw" ${leaf ? 'disabled' : ''} title="Подпапки">${leaf ? '' : open ? '▾' : '▸'}</button>
+    <input type="checkbox" ${own ? 'checked' : ''} ${blocked ? 'disabled' : ''} title="Учитывать в слайд-шоу и на карте">
+    <span class="name" title="${esc(node.path ? s.name + '/' + node.path : s.name)} — щёлкните, чтобы выбрать">${isRoot ? '📁' : '📂'} ${esc(node.name)}</span>${tag}
+    ${isSel ? '<button data-a="play" title="Слайд-шоу только по этой папке">▶</button>' : ''}
+    ${isRoot && s.perm !== 'granted' ? '<button data-a="grant" title="Разрешить чтение">🔓</button>' : ''}
+    ${isRoot ? `<button data-a="up" title="Выше">↑</button><button data-a="down" title="Ниже">↓</button>
+    <button data-a="del" title="Убрать из списка (файлы не трогаются)">✕</button>` : ''}`;
+  const cb = row.querySelector('input');
+  cb.indeterminate = own && hasExcludedInside(s, node.path);
+  cb.onchange = () => {
+    if (isRoot) s.enabled = cb.checked;
+    else if (cb.checked) s.excluded.delete(node.path); else s.excluded.add(node.path);
+    renderSources(); persistSources(); onTreeChanged(cb.checked);
+  };
+  row.querySelector('.tw').onclick = async () => {
+    if (open) s.open.delete(node.path); else s.open.add(node.path);
+    if (!open && !node.children) {
+      try { await loadChildren(s, node); } catch (e) { s.open.delete(node.path); notice(`Не удалось прочитать «${node.name}»: ${e.message}`, true); }
+    }
+    renderSources(); persistSources();
+  };
+  row.querySelector('.name').onclick = () => { selected = { srcId: s.id, path: node.path }; store('selected', selected); renderSources(); };
+  row.querySelectorAll('button[data-a]').forEach(b => b.onclick = async () => {
+    const a = b.dataset.a;
+    if (a === 'play') return startShow('selected');
+    if (a === 'grant') { await grant(s); }
+    else if (a === 'up' && i > 0) { [sources[i - 1], sources[i]] = [sources[i], sources[i - 1]]; }
+    else if (a === 'down' && i < sources.length - 1) { [sources[i + 1], sources[i]] = [sources[i], sources[i + 1]]; }
+    else if (a === 'del') { sources.splice(i, 1); if (selected && selected.srcId === s.id) selected = null; onTreeChanged(false); }
+    renderSources(); persistSources();
   });
+  li.appendChild(row);
+  if (open) {
+    if (node.children) {
+      if (node.children.length) {
+        const sub = document.createElement('ul');
+        node.children.forEach(c => sub.appendChild(renderNode(s, c, depth + 1, i)));
+        li.appendChild(sub);
+      }
+    } else if (s.perm === 'granted') {         // раскрыто в прошлом сеансе — дочитываем
+      loadChildren(s, node).then(renderSources, () => {});
+    }
+  }
+  return li;
+}
+// Изменились отметки: карта сразу скрывает выключенное; если что-то включили — тихо дочитываем (кэш делает это быстрым)
+let rescanTimer = null;
+function onTreeChanged(included) {
+  if (!mapAll.length) return;
+  MapView.setPoints(MapView.points.filter(p => inChecked(p.entry)), { fit: false });
+  if (included) { clearTimeout(rescanTimer); rescanTimer = setTimeout(() => scanGps({ fit: false }), 600); }
 }
 async function grant(s) {
   try { s.perm = await s.handle.requestPermission({ mode: 'read' }); } catch (e) { s.perm = 'prompt'; }
@@ -362,14 +465,18 @@ document.addEventListener('drop', async (e) => {
 });
 
 /* ============================ обход файлов ============================ */
-// entry: { key, name, path (для подписи), size?, getFile() }
-async function listSource(src, recursive, onCount) {
+// entry: { key, srcId, dir (путь папки внутри источника), name, path (для подписи), getFile() }
+// opt: { root — с какой папки начинать, from — для isExcluded, ignore — не учитывать отметки вовсе }
+async function listSource(src, opt, onCount) {
+  const { root = '', from = null, ignore = false } = opt;
+  const skip = (dir) => !ignore && isExcluded(src, dir, from);
   const out = [];
+  const mk = (rel, name, getFile) => ({ key: src.id + '/' + rel, srcId: src.id, dir: parentOf(rel), name, path: src.name + '/' + rel, getFile });
   if (src.kind === 'files') {
-    const items = src.files.filter(f => IMG_RE.test(f.rel) && (recursive || !f.rel.includes('/')));
+    const items = src.files.filter(f => { const d = parentOf(f.rel); return IMG_RE.test(f.rel) && under(d, root) && !skip(d); });
     const split = items.map(f => ({ f, parts: f.rel.split('/') }));
     split.sort((a, b) => cmpPaths(a.parts, b.parts));
-    for (const { f } of split) out.push({ key: src.id + '/' + f.rel, name: f.file.name, path: src.name + '/' + f.rel, getFile: async () => f.file });
+    for (const { f } of split) out.push(mk(f.rel, f.file.name, async () => f.file));
     onCount && onCount(out.length);
     return out;
   }
@@ -377,15 +484,17 @@ async function listSource(src, recursive, onCount) {
     const files = [], dirs = [];
     for await (const h of dir.values()) {
       if (h.kind === 'file') { if (IMG_RE.test(h.name)) files.push(h); }
-      else if (recursive) dirs.push(h);
+      else if (!skip(prefix + h.name)) dirs.push(h);
     }
     files.sort((a, b) => cmpName(a.name, b.name));
     dirs.sort((a, b) => cmpName(a.name, b.name));
-    for (const h of files) out.push({ key: src.id + '/' + prefix + h.name, name: h.name, path: src.name + '/' + prefix + h.name, getFile: () => h.getFile() });
+    for (const h of files) out.push(mk(prefix + h.name, h.name, () => h.getFile()));
     onCount && onCount(out.length);
     for (const d of dirs) await walk(d, prefix + d.name + '/');
   }
-  await walk(src.handle, '');
+  let d = src.handle;
+  for (const seg of root.split('/').filter(Boolean)) d = await d.getDirectoryHandle(seg);
+  await walk(d, root ? root + '/' : '');
   return out;
 }
 // Порядок внутри папки: сначала файлы, затем подпапки (обход в глубину), всё в «естественном» порядке имён.
@@ -401,23 +510,28 @@ function cmpPaths(a, b) {
   return a.length - b.length;
 }
 
-async function collectAll() {
-  const active = sources.filter(s => s.enabled);
-  if (!active.length) { status('Добавьте и отметьте хотя бы одну папку.'); return null; }
-  for (const s of active) {
-    if (s.perm !== 'granted' && !(await grant(s))) { renderSources(); status(`Нет доступа к «${s.name}». Нажмите 🔓 рядом с папкой.`); return null; }
+// scope: 'checked' — отмеченные папки; 'all' — всё без учёта отметок; 'selected' — выбранная папка с подпапками
+async function collect(scope = 'checked') {
+  let jobs;
+  if (scope === 'all') jobs = sources.map(s => ({ src: s, opt: { ignore: true } }));
+  else if (scope === 'selected') {
+    const s = selected && sources.find(x => x.id === selected.srcId);
+    if (!s) { notice('Сначала выберите папку: щёлкните по её имени в списке.'); return null; }
+    jobs = [{ src: s, opt: { root: selected.path, from: selected.path } }];
+  } else jobs = sources.filter(s => s.enabled).map(s => ({ src: s, opt: {} }));
+  if (!jobs.length) { notice('Добавьте и отметьте хотя бы одну папку.'); return null; }
+  for (const { src } of jobs) {
+    if (src.perm !== 'granted' && !(await grant(src))) { renderSources(); notice(`Нет доступа к «${src.name}». Нажмите 🔓 рядом с папкой.`, true); return null; }
   }
   renderSources();
-  const recursive = $('recursive').checked;
   let all = [], base = 0;
-  for (const s of active) {
+  for (const { src, opt } of jobs) {
     try {
-      const list = await listSource(s, recursive, (n) => status(`Чтение списка файлов… ${base + n}`));
+      const list = await listSource(src, opt, (n) => status(`Чтение списка файлов… ${base + n}`));
       all = all.concat(list); base = all.length;
-    } catch (e) { status(`Ошибка чтения «${s.name}»: ${e.message}`); return null; }
+    } catch (e) { notice(`Ошибка чтения «${src.name}»: ${e.message}`, true); return null; }
   }
-  if (!all.length) { status('В выбранных папках нет изображений.'); return null; }
-  lastAll = all;
+  if (!all.length) { notice('В выбранных папках нет изображений.'); return null; }
   return all;
 }
 
@@ -595,7 +709,7 @@ const Show = (() => {
     const e = list[idx]; if (!e) return;
     const g = await readGps(e);
     close();
-    if (!MapView.points.length && lastAll.length) await scanGps(lastAll);   // карта ещё не построена
+    if (!MapView.points.length) await scanGps();   // карта ещё не построена
     if (g) MapView.focus(g.lat, g.lon, e);
     else status(`У «${e.name}» нет геометки. Выберите на карте другое фото и нажмите «▶ Слайд-шоу отсюда».`);
   }
@@ -642,21 +756,27 @@ function showOptions() {
     caption: $('caption').checked, fade: $('fade').checked, loop: $('loop').checked,
   };
 }
-$('start').onclick = async () => {
-  saveSettings();
-  const all = await collectAll(); if (!all) return;
+async function startShow(scope) {
+  saveSettings(); notice('');
+  let all;
+  if (scope === 'map') {
+    all = MapView.visibleEntries();
+    if (!all.length) { notice(MapView.points.length ? 'В видимой части карты нет фото — отдалите карту.' : 'Сначала постройте карту: «Найти фото с геометками».'); return; }
+  } else { all = await collect(scope); if (!all) return; }
+  lastShowAll = all;
   const { mode, n } = modeOpts();
   const rebuild = () => buildPlaylist(all, mode, n);
   const list = rebuild();
   status(`Файлов найдено: ${all.length}, в показе: ${list.length}`);
   Show.start({ list, rebuild: mode === 'order' ? null : rebuild, ...showOptions() });
-};
+}
+$('start').onclick = () => startShow(document.querySelector('input[name=scope]:checked').value);
 
 /* ============================ карта ============================ */
 const MapView = (() => {
   if (!window.L || !L.markerClusterGroup) {
     notice('Не загрузилась библиотека карты (папка lib/ рядом с index.html?). Слайд-шоу работает, карта — нет.', true, true);
-    return { setPoints() {}, focus() {}, map: null, points: [] };
+    return { setPoints() {}, focus() {}, visibleEntries: () => [], setLook() {}, map: null, points: [] };
   }
   const map = L.map('map', { zoomControl: true, worldCopyJump: true }).setView([30, 10], 2);
   const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -669,8 +789,18 @@ const MapView = (() => {
   L.control.layers({ 'OpenStreetMap': osm, 'OpenTopoMap': topo, 'Спутник (Esri)': sat }).addTo(map);
   L.control.scale({ imperial: false }).addTo(map);
 
-  let cluster = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 50 });
+  // Плотность: 1…10 → радиус объединения маркеров в кластер 117…5 px (меньше радиус — больше отдельных фото)
+  let density = 6, size = 52;
+  const radius = () => Math.round(5 + (10 - density) * 12.5);
+  const newCluster = () => L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: radius(), spiderfyOnMaxZoom: true });
+  let cluster = newCluster();
   map.addLayer(cluster);
+  function setLook(d, sz) {
+    density = d; size = sz;
+    map.removeLayer(cluster); cluster = newCluster(); map.addLayer(cluster);
+    setPoints(points, { fit: false });
+  }
+  const visibleEntries = () => { const b = map.getBounds(); return points.filter(p => b.contains([p.lat, p.lon])).map(p => p.entry); };
   let points = [];         // { lat, lon, date, entry }
   let tempMarker = null;
 
@@ -714,7 +844,7 @@ const MapView = (() => {
   }
 
   function makeMarker(p, i) {
-    const m = L.marker([p.lat, p.lon], { icon: L.divIcon({ className: '', html: '<div class="ph"><img alt=""></div>', iconSize: [52, 52], iconAnchor: [26, 26] }) });
+    const m = L.marker([p.lat, p.lon], { icon: L.divIcon({ className: '', html: `<div class="ph" style="width:${size}px;height:${size}px"><img alt=""></div>`, iconSize: [size, size], iconAnchor: [size / 2, size / 2] }) });
     m.on('add', () => {
       thumb(p.entry).then(url => { const img = m.getElement() && m.getElement().querySelector('img'); if (url && img) img.src = url; });
     });
@@ -737,20 +867,21 @@ const MapView = (() => {
       <div class="row"><button data-a="open">🔍 Открыть</button><button data-a="show">▶ Слайд-шоу отсюда</button></div></div>`;
   }
   // «Слайд-шоу отсюда»: весь набор папок (включая фото без геометок), начиная с выбранного, в текущем режиме
+  // Если фото есть в наборе прерванного слайд-шоу — продолжаем его, иначе берём набор карты
   function startFrom(i, paused) {
-    const all = lastAll.length ? lastAll : points.map(p => p.entry);
-    const { mode, n } = modeOpts();
     const key = points[i].entry.key;
+    const all = lastShowAll.some(e => e.key === key) ? lastShowAll : mapAll.length ? mapAll : points.map(p => p.entry);
+    const { mode, n } = modeOpts();
     const list = paused ? [points[i].entry] : buildFrom(all, mode, n, key);
     const startAt = !paused && mode === 'order' ? Math.max(0, all.findIndex(e => e.key === key)) : 0;
     Show.start({ list, startAt, paused, rebuild: paused ? null : () => buildPlaylist(all, mode, n), ...showOptions(), loop: paused ? false : $('loop').checked });
   }
 
-  function setPoints(pts) {
+  function setPoints(pts, { fit = true } = {}) {
     points = pts;
     cluster.clearLayers();
     cluster.addLayers(pts.map(makeMarker));
-    if (pts.length) map.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lon])).pad(0.1), { maxZoom: 15 });
+    if (fit && pts.length) map.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lon])).pad(0.1), { maxZoom: 15 });
   }
   function focus(lat, lon, entry) {
     if (tempMarker) map.removeLayer(tempMarker);
@@ -763,13 +894,14 @@ const MapView = (() => {
       .bindPopup(esc(entry.path)).openPopup();
     map.setView([lat, lon], 15);
   }
-  return { setPoints, focus, map, get points() { return points; } };
+  return { setPoints, focus, visibleEntries, setLook, map, get points() { return points; } };
 })();
 
 /* сканирование геометок с кэшем в IndexedDB (ключ: путь + размер + дата изменения) */
-async function scanGps(given) {
+async function scanGps({ fit = true } = {}) {
   saveSettings();
-  const all = Array.isArray(given) ? given : await collectAll(); if (!all) return;
+  const all = await collect('checked'); if (!all) return;
+  mapAll = all;
   $('scan').disabled = true;
   const t0 = performance.now();
   const results = new Array(all.length);
@@ -803,7 +935,7 @@ async function scanGps(given) {
     await Promise.all(Array.from({ length: 8 }, worker));
     if (pending.length) await DB.putMany('meta', pending).catch(() => {});
     const pts = results.filter(Boolean);
-    MapView.setPoints(pts);
+    MapView.setPoints(pts, { fit });
     const sec = ((performance.now() - t0) / 1000).toFixed(1);
     status(`Фото с геометками: ${pts.length} из ${all.length} (из кэша: ${fromCache}, ${sec} с).`);
   } finally { progress(null); $('scan').disabled = false; }
@@ -814,18 +946,29 @@ $('clearCache').onclick = async () => { await DB.clear('meta').catch(() => {}); 
 /* ============================ настройки ============================ */
 function saveSettings() {
   store('settings', {
-    recursive: $('recursive').checked, mode: document.querySelector('input[name=mode]:checked').value,
+    scope: document.querySelector('input[name=scope]:checked').value, mode: document.querySelector('input[name=mode]:checked').value,
+    density: $('density').value, thumbSize: $('thumbSize').value,
     nth: $('nth').value, interval: $('interval').value, caption: $('caption').checked, fade: $('fade').checked, loop: $('loop').checked,
   });
 }
 (function restore() {
   const s = load('settings', null); if (!s) return;
-  $('recursive').checked = s.recursive !== false;
+  const sc = document.querySelector(`input[name=scope][value="${s.scope}"]`); if (sc) sc.checked = true;
+  if (s.density) $('density').value = s.density; if (s.thumbSize) $('thumbSize').value = s.thumbSize;
   const r = document.querySelector(`input[name=mode][value="${s.mode}"]`); if (r) r.checked = true;
   if (s.nth) $('nth').value = s.nth; if (s.interval) $('interval').value = s.interval;
   $('caption').checked = s.caption !== false; $('fade').checked = s.fade !== false; $('loop').checked = s.loop !== false;
 })();
-document.querySelectorAll('aside input').forEach(i => i.addEventListener('change', saveSettings));
+document.querySelectorAll('aside input, aside select').forEach(i => i.addEventListener('change', saveSettings));
+function applyLook() {
+  const d = +$('density').value;
+  $('densityVal').textContent = d >= 9 ? 'почти все по отдельности' : d <= 2 ? 'сильно группировать' : `группировать в радиусе ${Math.round(5 + (10 - d) * 12.5)} px`;
+  MapView.setLook(d, +$('thumbSize').value);
+}
+$('density').addEventListener('input', () => { $('densityVal').textContent = '…'; });
+$('density').addEventListener('change', applyLook);
+$('thumbSize').addEventListener('change', applyLook);
+applyLook();
 
 if (!window.exifr) notice('Не загрузилась библиотека чтения EXIF (lib/exifr). Геометки и даты недоступны.', true, true);
 else if (!hasFSA) {
