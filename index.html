@@ -4,13 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PhotoShow</title>
-<!-- Библиотеки: Leaflet (карта), Leaflet.markercluster (кластеры), exifr (чтение EXIF/GPS) -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js"></script>
+<!-- Библиотеки лежат в репозитории (lib/), CDN не нужен:
+     Leaflet 1.9.4 (BSD-2), Leaflet.markercluster 1.5.3 (MIT), exifr 7.1.3 (MIT) -->
+<link rel="stylesheet" href="lib/leaflet/leaflet.css">
+<link rel="stylesheet" href="lib/markercluster/MarkerCluster.css">
+<link rel="stylesheet" href="lib/markercluster/MarkerCluster.Default.css">
+<script src="lib/leaflet/leaflet.js"></script>
+<script src="lib/markercluster/leaflet.markercluster.js"></script>
+<script src="lib/exifr/full.umd.js"></script>
 <style>
   :root {
     --bg: #f4f5f7; --panel: #ffffff; --text: #1d2330; --muted: #677084; --line: #dde1e8;
@@ -53,7 +54,14 @@
   label.opt { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
   input[type=number] { width: 64px; font: inherit; padding: 3px 4px; border: 1px solid var(--line); border-radius: 4px;
                        background: var(--panel); color: var(--text); }
-  #status { margin-top: 10px; font-size: 12px; color: var(--muted); min-height: 1.4em; white-space: pre-line; }
+  #foot { position: sticky; bottom: -24px; margin: 10px -16px -24px; padding: 8px 16px 12px; background: var(--panel);
+          border-top: 1px solid var(--line); }
+  #foot:has(#status:empty):has(#prog[hidden]) { display: none; }
+  #status { font-size: 12px; color: var(--muted); white-space: pre-line; }
+  .notice { margin-top: 8px; padding: 8px 10px; border-radius: 6px; font-size: 12px; white-space: pre-line;
+            border: 1px solid var(--warn); color: var(--text); background: color-mix(in srgb, var(--warn) 12%, var(--panel)); }
+  .notice.err { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, var(--panel)); }
+  .notice[hidden] { display: none; }
   progress { width: 100%; height: 6px; }
   .keys { font-size: 12px; color: var(--muted); }
   .keys kbd { border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; font: 11px monospace; }
@@ -108,6 +116,7 @@
     <button id="addDirCompat" title="Для браузеров без File System Access API (Firefox). Доступ не сохраняется между сеансами.">+ (совместимый режим)</button>
     <input id="dirInput" type="file" webkitdirectory multiple hidden>
   </div>
+  <div id="notice" class="notice" hidden></div>
   <div id="drop">…или перетащите сюда одну или несколько папок из Проводника</div>
   <div class="row" style="margin-top:6px">
     <button id="grantAll" hidden>🔓 Восстановить доступ ко всем</button>
@@ -143,8 +152,8 @@
     <button id="clearCache">Очистить кэш геометок</button>
   </div>
 
-  <progress id="prog" hidden></progress>
-  <div id="status"></div>
+  <div id="foot"><progress id="prog" hidden></progress>
+  <div id="status"></div></div>
 </aside>
 <main><div id="map"></div></main>
 
@@ -167,6 +176,15 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const hasFSA = 'showDirectoryPicker' in window;
 
 function status(msg) { $('status').textContent = msg || ''; }
+// Заметное сообщение прямо под кнопками добавления папок
+function notice(msg, isErr, sticky) {
+  const n = $('notice');
+  if (!msg && n.dataset.sticky) return;            // постоянные предупреждения (нет библиотек / API) не сбрасываем
+  n.dataset.sticky = sticky ? '1' : ''; n.textContent = msg || ''; n.hidden = !msg; n.classList.toggle('err', !!isErr);
+  if (msg) n.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+window.addEventListener('error', (e) => notice('Ошибка скрипта: ' + e.message + '\nСообщите об этом разработчику (F12 → Console покажет подробности).', true));
+window.addEventListener('unhandledrejection', (e) => { if (e.reason && e.reason.name === 'AbortError') return; notice('Ошибка: ' + (e.reason && e.reason.message || e.reason), true); });
 function progress(v, max) {
   const p = $('prog');
   if (v == null) { p.hidden = true; return; }
@@ -297,14 +315,29 @@ async function grant(s) {
 }
 
 $('addDir').onclick = async () => {
-  if (!hasFSA) { status('Этот браузер не поддерживает выбор папок с сохранением доступа (нужен Chrome или Edge). Используйте «совместимый режим».'); return; }
+  if (!hasFSA) { $('dirInput').click(); return; }   // нет API — сразу совместимый режим
+  notice('');
   try {
     const h = await window.showDirectoryPicker({ id: 'photoshow', mode: 'read' });
     await addHandle(h); renderSources(); persistSources();
-  } catch (e) { if (e.name !== 'AbortError') status('Ошибка: ' + e.message); }
+  } catch (e) {
+    if (e.name === 'AbortError') return;                     // пользователь закрыл диалог
+    if (e.name === 'SecurityError' && !window.isSecureContext)
+      notice('Страница открыта не по https (или не с localhost) — браузер запрещает доступ к папкам.', true);
+    else if (e.name === 'SecurityError' || e.name === 'NotAllowedError')
+      notice(`Браузер не дал доступ к папке (${e.name}: ${e.message}).\n` +
+        '• Chrome не разрешает выбирать системные папки целиком (корень диска C:\\, папку пользователя, Windows, Program Files) — выберите вложенную папку, например «Изображения\\2024».\n' +
+        '• Проверьте разрешения сайта: значок слева от адреса → «Настройки сайтов» → «Изменение файлов».\n' +
+        '• Или используйте «совместимый режим».', true);
+    else notice(`Не удалось открыть выбор папки: ${e.name}: ${e.message}\nПопробуйте «совместимый режим».`, true);
+  }
 };
 $('addDirCompat').onclick = () => $('dirInput').click();
-$('dirInput').onchange = (e) => { addFileList(e.target.files); e.target.value = ''; renderSources(); };
+$('dirInput').onchange = (e) => {
+  const n = e.target.files.length;
+  addFileList(e.target.files); e.target.value = ''; renderSources();
+  notice(n ? '' : 'Папка пуста или браузер не передал файлы.', !n);
+};
 $('grantAll').onclick = async () => {
   // Каждый запрос требует жеста пользователя; Chrome обычно позволяет несколько подряд,
   // а оставшиеся можно разрешить кнопкой 🔓 у конкретной папки.
@@ -321,10 +354,10 @@ document.addEventListener('drop', async (e) => {
     const hs = await Promise.all(items.map(it => it.getAsFileSystemHandle()));   // вызвать синхронно для всех!
     let n = 0;
     for (const h of hs) if (h && h.kind === 'directory') { await addHandle(h); n++; }
-    if (!n) status('Перетащите именно папки.');
+    if (!n) notice('Перетащите именно папки, а не отдельные файлы.');
     renderSources(); persistSources();
   } else {
-    status('В этом браузере перетаскивание папок не поддерживается — используйте кнопку «совместимый режим».');
+    notice('В этом браузере перетаскивание папок не поддерживается — используйте кнопку «+ Добавить папку».');
   }
 });
 
@@ -437,7 +470,7 @@ const Mini = (() => {
   const box = $('mini'), info = $('miniInfo');
   let map = null, marker = null, ctx = null, visible = load('mini', false), current = null, ctxCount = -1;
   function ensure() {
-    if (map) return;
+    if (map || !window.L) return;
     map = L.map('miniMap', { zoomControl: true, attributionControl: true }).setView([30, 10], 2);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
       { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
@@ -454,7 +487,7 @@ const Mini = (() => {
   async function update(entry, file) {
     current = { entry, file };
     if (!visible) return;
-    ensure(); drawContext();
+    ensure(); if (!map) { info.textContent = 'Карта недоступна'; return; } drawContext();
     const g = await readGps(entry, file);
     if (!current || current.entry !== entry) return;
     if (!g) { info.textContent = 'Нет геометки: ' + entry.name; marker.remove(); return; }
@@ -465,7 +498,7 @@ const Mini = (() => {
   function toggle(force) {
     visible = force == null ? !visible : force; store('mini', visible);
     box.classList.toggle('on', visible);
-    if (visible) { ensure(); map.invalidateSize(); if (current) update(current.entry, current.file); }
+    if (visible && window.L) { ensure(); map.invalidateSize(); if (current) update(current.entry, current.file); }
   }
   box.addEventListener('click', e => e.stopPropagation());
   box.addEventListener('wheel', e => e.stopPropagation(), { passive: true });
@@ -621,6 +654,10 @@ $('start').onclick = async () => {
 
 /* ============================ карта ============================ */
 const MapView = (() => {
+  if (!window.L || !L.markerClusterGroup) {
+    notice('Не загрузилась библиотека карты (папка lib/ рядом с index.html?). Слайд-шоу работает, карта — нет.', true, true);
+    return { setPoints() {}, focus() {}, map: null, points: [] };
+  }
   const map = L.map('map', { zoomControl: true, worldCopyJump: true }).setView([30, 10], 2);
   const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
     { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
@@ -790,8 +827,11 @@ function saveSettings() {
 })();
 document.querySelectorAll('aside input').forEach(i => i.addEventListener('change', saveSettings));
 
-if (!hasFSA) {
-  status('Внимание: браузер не поддерживает File System Access API — доступен только «совместимый режим» (папки нужно выбирать при каждом открытии). Рекомендуется Chrome или Edge.');
+if (!window.exifr) notice('Не загрузилась библиотека чтения EXIF (lib/exifr). Геометки и даты недоступны.', true, true);
+else if (!hasFSA) {
+  notice('Этот браузер не поддерживает File System Access API (так ведут себя Firefox, Safari, Brave по умолчанию).\n' +
+    'Папки можно добавлять, но доступ не сохранится: после перезагрузки страницы их придётся выбрать снова. Для полного режима — Chrome или Edge.', false, true);
+  $('addDirCompat').hidden = true;
 }
 loadSources();
 </script>

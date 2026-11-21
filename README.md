@@ -24,14 +24,16 @@
 
 ## Запуск
 
-Нужен **Chrome или Edge**: им нужен [File System Access API](https://developer.mozilla.org/en-US/docs/Web/API/Window/showDirectoryPicker). В Firefox работает только «совместимый режим»: папку надо выбирать при каждом открытии.
+Лучше всего работает в **Chrome или Edge**: им нужен [File System Access API](https://developer.mozilla.org/en-US/docs/Web/API/Window/showDirectoryPicker) (`showDirectoryPicker`). С ним браузер выдаёт странице «ключ» к папке, который можно сохранить, и после перезагрузки папки остаются в списке.
+
+**Совместимый режим** — это обычный HTML-выбор папки (`<input type="file" webkitdirectory>`). Он есть во всех настольных браузерах, но доступ не сохраняется: при выборе браузер один раз отдаёт список файлов, и после перезагрузки страницы папку надо выбрать заново. В браузерах без File System Access API (Firefox, Safari, Brave по умолчанию, некоторые сборки на Chromium) кнопка «+ Добавить папку» сама переключается в этот режим и показывает пояснение. Узнать, есть ли API в браузере: F12 → Console → `'showDirectoryPicker' in window`.
 
 Варианты:
 1. GitHub Pages: включите в Settings → Pages (ветка `main`, корень) и откройте `https://<user>.github.io/photoviewer/`. Файлы при этом всё равно не покидают компьютер.
 2. Локально: `python -m http.server 8000` в папке репозитория, затем откройте `http://localhost:8000/`.
 3. Двойной клик по `index.html` (`file://`) тоже должен работать в Chrome/Edge, но этот вариант менее проверен (см. ниже).
 
-Нужен интернет: библиотеки (Leaflet 1.9.4, Leaflet.markercluster 1.5.3, exifr 7.1.3) и тайлы карты грузятся с CDN.
+Библиотеки лежат в папке `lib/`: Leaflet 1.9.4 (BSD-2), Leaflet.markercluster 1.5.3 (MIT) и exifr 7.1.3 (MIT), их лицензии лежат рядом. Интернет нужен только для подложки карты.
 
 ## Ограничения
 
