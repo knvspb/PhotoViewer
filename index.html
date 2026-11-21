@@ -24,8 +24,42 @@
   html, body { height: 100%; margin: 0; }
   body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, "Segoe UI", sans-serif;
          display: grid; grid-template-columns: 380px 1fr; }
-  aside { background: var(--panel); border-right: 1px solid var(--line); overflow-y: auto; padding: 14px 16px 24px; }
-  main { position: relative; min-width: 0; }
+  aside { background: var(--bg); border-right: 1px solid var(--line); overflow-y: auto; padding: 10px 10px 24px; }
+  header.top { display: flex; align-items: baseline; gap: 8px; padding: 2px 4px 8px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+  .card-h { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; text-transform: uppercase;
+            letter-spacing: .05em; color: var(--muted); margin-bottom: 8px; }
+  .lbl { font-size: 11px; color: var(--muted); margin: 8px 0 4px; }
+  button.sm { padding: 3px 8px; font-size: 12px; text-transform: none; letter-spacing: 0; font-weight: 600; }
+  /* сегментированный переключатель на радиокнопках */
+  .seg { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg label { flex: 1 1 auto; display: flex; align-items: center; justify-content: center; gap: 3px; padding: 5px 6px;
+               font-size: 12px; cursor: pointer; white-space: nowrap; border-left: 1px solid var(--line); user-select: none; }
+  .seg label:first-child { border-left: 0; }
+  .seg label:hover { background: var(--hover); }
+  .seg input[type=radio], .chip input[type=checkbox] { position: absolute; opacity: 0; width: 0; height: 0; pointer-events: none; }
+  .seg label:has(input[type=radio]:checked) { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .seg label:has(input[type=radio]:focus-visible), .chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+  input[type=number].inl { width: 42px; padding: 1px 2px; font-size: 12px; text-align: center; }
+  /* «чипы»-переключатели */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; font-size: 12px; border: 1px solid var(--line);
+          border-radius: 999px; cursor: pointer; user-select: none; }
+  .chip:hover { background: var(--hover); }
+  .chip:has(input[type=checkbox]) { color: var(--muted); }
+  .chip:has(input[type=checkbox]:checked) { color: var(--text); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+  .chip:has(input[type=checkbox]:checked)::before { content: '✓'; color: var(--accent); font-weight: 700; }
+  .chip.wide { margin-top: 6px; white-space: normal; border-radius: 8px; }
+  .kv { display: grid; grid-template-columns: 80px 1fr auto; align-items: center; gap: 8px; margin-top: 8px; font-size: 13px; }
+  .kv input[type=range] { width: 100%; }
+  .kv select { width: 100%; }
+  details.more { margin-top: 8px; }
+  details.more summary { font-size: 12px; color: var(--muted); cursor: pointer; }
+  details.more[open] summary { margin-bottom: 4px; }
+  #playCard:not(:has(input[name=scope][value=selected]:checked)) .sel-l { display: none; }
+  .sel-l { margin-top: 4px; }
+  main { position: relative; min-width: 0; z-index: 0; }
+  #map { isolation: isolate; }   /* маркеры с z-index не должны вылезать поверх галереи и показа */
   #map { position: absolute; inset: 0; }
   h1 { font-size: 18px; margin: 0 0 4px; }
   h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 18px 0 8px; }
@@ -38,8 +72,8 @@
   button:disabled { opacity: .5; cursor: default; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .grow { flex: 1; }
-  #drop { border: 2px dashed var(--line); border-radius: 8px; padding: 10px; text-align: center; color: var(--muted);
-          font-size: 12px; margin-top: 8px; }
+  #drop { border: 1px dashed var(--line); border-radius: 8px; padding: 6px; text-align: center; color: var(--muted);
+          font-size: 12px; margin-top: 6px; }
   #drop.over { border-color: var(--accent); color: var(--accent); }
   #sources, #sources ul { list-style: none; margin: 0; padding: 0; }
   #sources { margin-top: 8px; }
@@ -57,7 +91,7 @@
   label.opt { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
   input[type=number] { width: 64px; font: inherit; padding: 3px 4px; border: 1px solid var(--line); border-radius: 4px;
                        background: var(--panel); color: var(--text); }
-  #foot { position: sticky; bottom: -24px; margin: 10px -16px -24px; padding: 8px 16px 12px; background: var(--panel);
+  #foot { position: sticky; bottom: -24px; margin: 10px -10px -24px; padding: 8px 12px 12px; background: var(--panel);
           border-top: 1px solid var(--line); }
   #foot:has(#status:empty):has(#prog[hidden]) { display: none; }
   #status { font-size: 12px; color: var(--muted); white-space: pre-line; }
@@ -92,6 +126,14 @@
   #miniBar { display: flex; gap: 6px; align-items: center; padding: 6px; background: #1a1a1a; color: #ddd; font-size: 12px; }
   #miniBar span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #mini button { padding: 3px 8px; font-size: 12px; }
+  /* панель настроек в просмотре: те же элементы, что в боковой панели, переносятся сюда */
+  #showPanel { position: absolute; top: 52px; left: 16px; width: min(340px, calc(100vw - 32px)); padding: 10px 12px; border-radius: 10px;
+               background: rgba(22,24,30,.93); color: #e6e9ef; cursor: default; box-shadow: 0 6px 24px rgba(0,0,0,.5);
+               --text: #e6e9ef; --muted: #a3abbb; --line: #3a4150; --panel: #1b1f27; --hover: #262c38; --accent: #5b8cff; --accent-text: #0b1020; }
+  #showPanel[hidden] { display: none; }
+  #showPanel .sp-h { display: flex; align-items: center; font-size: 13px; }
+  #showPanel button { background: transparent; color: #e6e9ef; border-color: #3a4150; padding: 1px 7px; }
+  #showPanel input.inl { background: #12151b; color: #e6e9ef; border-color: #3a4150; }
   #bar { position: absolute; left: 0; bottom: 0; height: 2px; background: rgba(255,255,255,.5); width: 0; }
 
   /* --- галерея --- */
@@ -135,6 +177,9 @@
   .clu.l { background: rgba(253,156,115,.45); } .clu.l span { background: rgba(241,128,23,.9); color: #fff; }
   .clu:hover span { outline: 2px solid var(--accent); }
   .maplibregl-popup { z-index: 100000000; }
+  .ph.cover { box-shadow: 3px 3px 0 -1px #fff, 3px 3px 0 0 rgba(0,0,0,.3), 0 1px 4px rgba(0,0,0,.5); }
+  .ph .cnt { position: absolute; right: -7px; top: -7px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+             background: rgba(20,24,32,.85); color: #fff; font: 600 11px/20px system-ui, sans-serif; text-align: center; border: 1px solid #fff; }
   .gal .grid { display: grid; grid-template-columns: repeat(auto-fill, 56px); gap: 6px; max-height: 300px; overflow: auto; margin-top: 6px; padding: 4px; }
   .gal .ph { width: 56px; height: 56px; }
   .maplibregl-popup-content { color: #1d2330; }
@@ -151,61 +196,99 @@
 </head>
 <body>
 <aside>
-  <h1>PhotoShow <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-21.4</span></h1>
-  <div class="hint">Слайд-шоу по папкам и карта фото с геометками. Файлы не покидают ваш компьютер.</div>
+  <header class="top">
+    <h1>PhotoShow</h1>
+    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-21.5</span>
+  </header>
 
-  <h2>Папки</h2>
-  <div class="row">
-    <button id="addDir" class="primary">+ Добавить папку</button>
-    <button id="addDirCompat" title="Для браузеров без File System Access API (Firefox). Доступ не сохраняется между сеансами.">+ (совместимый режим)</button>
-    <input id="dirInput" type="file" webkitdirectory multiple hidden>
-  </div>
-  <div id="notice" class="notice" hidden></div>
-  <div id="drop">…или перетащите сюда одну или несколько папок из Проводника</div>
-  <div class="row" style="margin-top:6px">
-    <button id="grantAll" hidden>🔓 Восстановить доступ ко всем</button>
-  </div>
-  <ul id="sources"></ul>
-  <div class="hint" id="noSources">Папок пока нет.</div>
-  <div class="hint">▸ — подпапки · флажок — учитывать в слайд-шоу и на карте · щелчок по имени — выбрать папку</div>
-  <label class="opt" title="Камера пишет RAW+JPEG: чтобы кадры не задваивались, RAW показывается, только если рядом нет JPEG/HEIC с тем же именем">
-    <input type="checkbox" id="rawSkip" checked> RAW: пропускать, если рядом есть JPEG с тем же именем</label>
+  <section class="card">
+    <div class="card-h">Папки
+      <span class="grow"></span>
+      <button id="addDir" class="primary sm" title="Добавить папку (можно несколько раз или перетащить сразу несколько)">+ Папка</button>
+      <button id="addDirCompat" class="sm" title="Совместимый режим: для браузеров без File System Access API. Доступ не сохраняется между сеансами.">+ совм.</button>
+      <input id="dirInput" type="file" webkitdirectory multiple hidden>
+    </div>
+    <div id="notice" class="notice" hidden></div>
+    <button id="grantAll" class="sm" hidden>🔓 Восстановить доступ ко всем</button>
+    <ul id="sources"></ul>
+    <div class="hint" id="noSources">Папок пока нет.</div>
+    <div id="drop">Перетащите сюда папки из Проводника</div>
+    <details class="more">
+      <summary>Подсказки и RAW</summary>
+      <div class="hint">▸ — подпапки · флажок — учитывать в показе и на карте · щелчок по имени — выбрать папку (▶ рядом — показ только её)</div>
+      <label class="chip wide" title="Камера пишет RAW+JPEG: чтобы кадры не задваивались, RAW показывается, только если рядом нет JPEG/HEIC с тем же именем">
+        <input type="checkbox" id="rawSkip" checked>RAW: пропускать, если есть JPEG с тем же именем</label>
+    </details>
+  </section>
 
-  <h2>Слайд-шоу и галерея</h2>
-  <div class="hint">Что показывать:</div>
-  <label class="opt"><input type="radio" name="scope" value="checked" checked> Отмеченные папки</label>
-  <label class="opt"><input type="radio" name="scope" value="selected"> Выбранную папку <span id="selLabel" class="hint"></span></label>
-  <label class="opt"><input type="radio" name="scope" value="map"> Фото, видимые сейчас на карте</label>
-  <label class="opt"><input type="radio" name="scope" value="all"> Все фото всех папок (без учёта флажков)</label>
-  <div class="hint" style="margin-top:6px">Порядок:</div>
-  <label class="opt"><input type="radio" name="mode" value="order" checked> По порядку (имена папок / файлов)</label>
-  <label class="opt"><input type="radio" name="mode" value="random"> Полностью случайно</label>
-  <label class="opt"><input type="radio" name="mode" value="nth"> По порядку со случайным шагом, в среднем
-    <input type="number" id="nth" min="2" max="1000" value="5"></label>
-  <div class="hint" style="margin:-2px 0 4px 24px">Например 1, 10, 15, 23… до конца списка, затем следующий проход по ещё не показанным — пока не покажутся все.</div>
-  <label class="opt">Интервал, с <input type="number" id="interval" min="1" max="3600" step="0.5" value="5"></label>
-  <label class="opt"><input type="checkbox" id="caption" checked> Подпись (путь, дата)</label>
-  <label class="opt"><input type="checkbox" id="fade" checked> Плавная смена</label>
-  <label class="opt"><input type="checkbox" id="loop" checked> Зациклить</label>
-  <div class="row" style="margin-top:8px">
-    <button id="start" class="primary grow">▶ Слайд-шоу</button>
-    <button id="galleryBtn" class="grow" title="Плитка миниатюр того же набора">▦ Галерея</button>
-  </div>
-  <div class="keys" style="margin-top:8px">
-    <kbd>↑</kbd>/<kbd>↓</kbd> назад/вперёд по порядку показа · <kbd>←</kbd>/<kbd>→</kbd> соседние фото на карте · <kbd>Пробел</kbd> пауза · <kbd>+</kbd>/<kbd>−</kbd> интервал ·
-    <kbd>I</kbd> подпись · <kbd>G</kbd> мини-карта · <kbd>M</kbd> прервать и перейти к карте · <kbd>F</kbd> полный экран · <kbd>Esc</kbd> выход (из просмотра из галереи — обратно в галерею)
-  </div>
+  <section class="card" id="playCard">
+    <div class="card-h">Просмотр</div>
+    <div class="lbl">Что показывать</div>
+    <div class="seg">
+      <label title="Отмеченные флажками папки"><input type="radio" name="scope" value="checked" checked>Отмеченные</label>
+      <label title="Выбранная папка с подпапками (щелчок по имени в дереве)"><input type="radio" name="scope" value="selected">Папка</label>
+      <label title="Фото с геометками в видимой части карты"><input type="radio" name="scope" value="map">На карте</label>
+      <label title="Все фото всех папок, без учёта флажков"><input type="radio" name="scope" value="all">Все</label>
+    </div>
+    <div id="selLabel" class="hint sel-l"></div>
+    <div id="playOptsHome"><div id="playOpts">
+      <div class="lbl">Порядок</div>
+      <div class="seg">
+        <label title="По именам папок и файлов"><input type="radio" name="mode" value="order" checked>Подряд</label>
+        <label title="Полностью случайно, без повторов"><input type="radio" name="mode" value="random">Случайно</label>
+        <label title="По порядку со случайным шагом, в среднем N (например 1, 10, 15, 23…); дойдя до конца — новый проход по ещё не показанным">
+          <input type="radio" name="mode" value="nth">Шаг ≈<input type="number" id="nth" min="2" max="1000" value="5" class="inl"></label>
+      </div>
+      <div class="chips">
+        <label class="chip" title="Интервал смены кадров, секунд">⏱<input type="number" id="interval" min="1" max="3600" step="0.5" value="5" class="inl">с</label>
+        <label class="chip" title="Путь и дата съёмки внизу кадра"><input type="checkbox" id="caption" checked>Подпись</label>
+        <label class="chip" title="Плавная смена кадров"><input type="checkbox" id="fade" checked>Плавно</label>
+        <label class="chip" title="После последнего — снова с начала"><input type="checkbox" id="loop" checked>По кругу</label>
+      </div>
+    </div></div>
+    <div class="row" style="margin-top:10px">
+      <button id="start" class="primary grow">▶ Слайд-шоу</button>
+      <button id="galleryBtn" class="grow" title="Плитка миниатюр того же набора">▦ Галерея</button>
+    </div>
+    <details class="more">
+      <summary>Клавиши в просмотре</summary>
+      <div class="keys">
+        <kbd>↑</kbd><kbd>↓</kbd> по порядку показа · <kbd>←</kbd><kbd>→</kbd> соседние фото на карте · <kbd>Пробел</kbd> пауза ·
+        <kbd>+</kbd><kbd>−</kbd> интервал · <kbd>S</kbd> настройки · <kbd>I</kbd> подпись · <kbd>G</kbd> мини-карта · <kbd>M</kbd> к карте ·
+        <kbd>F</kbd> полный экран · <kbd>Esc</kbd> выход (из галереи — обратно в неё)
+      </div>
+    </details>
+  </section>
 
-  <h2>Карта</h2>
-  <div class="row">
-    <button id="scan" class="primary grow">🗺 Найти фото с геометками</button>
-  </div>
-  <div class="hint" style="margin-top:4px">Учитываются отмеченные папки. Результаты чтения EXIF кэшируются: повторное сканирование быстрое.</div>
-  <label class="opt">Плотность <input type="range" id="density" min="1" max="10" value="6" class="grow"> <span id="densityVal" class="hint"></span></label>
-  <label class="opt">Миниатюры <select id="thumbSize"><option value="36">мелкие</option><option value="52" selected>средние</option><option value="72">крупные</option></select></label>
-  <div class="row" style="margin-top:6px">
-    <button id="clearCache">Очистить кэш геометок</button>
-  </div>
+  <section class="card">
+    <div class="card-h">Карта</div>
+    <button id="scan" class="primary" style="width:100%">🗺 Найти фото с геометками</button>
+    <div class="kv">
+      <span>Плотность</span><input type="range" id="density" min="1" max="10" value="6">
+      <span id="densityVal" class="hint"></span>
+    </div>
+    <div class="kv">
+      <span>Миниатюры</span>
+      <select id="thumbSize"><option value="36">мелкие</option><option value="52" selected>средние</option><option value="72">крупные</option></select>
+      <span></span>
+    </div>
+    <div class="kv" title="Группы фото показываются кружком с числом; при достаточном приближении — миниатюрой первого фото">
+      <span>Группы</span>
+      <select id="coverZoom">
+        <option value="99">кружки</option>
+        <option value="14">фото — на уровне улиц</option>
+        <option value="12" selected>фото — на уровне города</option>
+        <option value="9">фото — на уровне региона</option>
+        <option value="0">фото — всегда</option>
+      </select>
+      <span></span>
+    </div>
+    <details class="more">
+      <summary>Ещё</summary>
+      <div class="hint">Учитываются отмеченные папки. Результаты чтения EXIF кэшируются — повторный поиск быстрый.</div>
+      <button id="clearCache" class="sm" style="margin-top:6px">Очистить кэш геометок</button>
+    </details>
+  </section>
 
   <div id="foot"><progress id="prog" hidden></progress>
   <div id="status"></div></div>
@@ -225,7 +308,8 @@
 <div id="show">
   <img id="imgA" alt=""><img id="imgB" alt="">
   <div id="cap"></div><div id="osd"></div><div id="bar"></div>
-  <div id="tools"><button data-a="mini" title="Мини-карта (G)">📍 Мини-карта</button><button data-a="map" title="Прервать и перейти к карте (M)">🗺 К карте</button><button data-a="pause" title="Пауза (Пробел)">⏯</button><button data-a="close" title="Выход (Esc)">✕</button></div>
+  <div id="showPanel" hidden><div class="sp-h"><b>Настройки показа</b><span class="grow"></span><button data-a="opts" title="Закрыть (S)">✕</button></div></div>
+  <div id="tools"><button data-a="mini" title="Мини-карта (G)">📍 Мини-карта</button><button data-a="map" title="Прервать и перейти к карте (M)">🗺 К карте</button><button data-a="pause" title="Пауза (Пробел)">⏯</button><button data-a="opts" title="Настройки показа (S)">⚙</button><button data-a="close" title="Выход (Esc)">✕</button></div>
   <div id="mini"><div id="miniMap"></div>
     <div id="miniBar"><span id="miniInfo"></span><button data-a="map" title="Прервать показ и открыть большую карту на этом фото">🗺 Перейти к карте</button><button data-a="mini" title="Скрыть (G)">✕</button></div></div>
 </div>
@@ -398,7 +482,7 @@ function renderSources() {
   $('grantAll').hidden = !sources.some(s => s.perm !== 'granted');
   sources.forEach((s, i) => ul.appendChild(renderNode(s, s.tree, 0, i)));
   const sel = selected && sources.find(x => x.id === selected.srcId);
-  $('selLabel').textContent = sel ? `— «${sel.name}${selected.path ? '/' + selected.path : ''}»` : '— щёлкните по имени папки в списке';
+  $('selLabel').textContent = sel ? `Папка: «${sel.name}${selected.path ? '/' + selected.path : ''}»` : 'Папка не выбрана — щёлкните по её имени в списке';
 }
 function renderNode(s, node, depth, i) {
   const li = document.createElement('li');
@@ -886,6 +970,7 @@ const Show = (() => {
   let list = [], idx = 0, cur = 0, timer = null, paused = false, open = false, token = 0;
   let rebuild = null, intervalMs = 5000, loop = true, showCap = true, errorsInRow = 0;
   let shown = null;                 // фото на экране: list[idx] или «отступление» по карте
+  let base = [], curMode = '', curN = 0;   // полный набор показа и порядок, по которому построен list
   // Прогулка по карте (←/→): путь из показанных фото и множество уже посещённых
   let walk = null;                  // { path: [entry], seen: Set<key> }
   const cache = new Map();          // entry.key -> Promise<{url, file, ok}>; небольшой LRU
@@ -1018,7 +1103,37 @@ const Show = (() => {
     const my = token;
     timer = setTimeout(() => { if (my === token) step(1); }, intervalMs);
   }
+  /* ---------- настройки прямо из просмотра (S / ⚙) ---------- */
+  const panel = $('showPanel'), opts = $('playOpts'), home = $('playOptsHome');
+  function togglePanel(force) {
+    const on = force == null ? panel.hidden : force;
+    panel.hidden = !on;
+    if (on) panel.appendChild(opts); else home.appendChild(opts);
+  }
+  panel.addEventListener('click', e => e.stopPropagation());
+  panel.addEventListener('wheel', e => e.stopPropagation(), { passive: true });
+  // Изменились настройки (из панели или боковой колонки) — применяем к идущему показу
+  function applySettings() {
+    if (!open) return;
+    const o = showOptions(), { mode, n } = modeOpts();
+    intervalMs = o.interval * 1000; loop = o.loop;
+    el.style.setProperty('--fade', o.fade ? '.6s' : '0s');
+    if (o.caption !== showCap) { showCap = o.caption; cap.hidden = !showCap; }
+    if ((mode !== curMode || n !== curN) && base.length > 1) {
+      const e = shown || list[idx];
+      curMode = mode; curN = n;
+      list = buildFrom(base, mode, n, e.key);
+      idx = mode === 'order' ? Math.max(0, base.findIndex(x => x.key === e.key)) : 0;
+      rebuild = mode === 'order' ? null : () => buildPlaylist(base, mode, n);
+      walk = null;
+      flash({ order: 'Порядок: подряд', random: 'Порядок: случайно', nth: `Порядок: шаг ≈ ${n}` }[mode]);
+      const note = `${idx + 1} / ${list.length}`;
+      if (showCap) cap.textContent = cap.textContent.replace(/\n.*$/, '\n' + note);
+    }
+    schedule();
+  }
   function close() {
+    togglePanel(false);
     open = false; token++; clearTimeout(timer); el.classList.remove('open');
     dropCache(); walk = null; shown = null;
     imgs.forEach(im => { im.removeAttribute('src'); im.classList.remove('on'); });
@@ -1026,6 +1141,8 @@ const Show = (() => {
   }
   async function start(opts) {
     list = opts.list; rebuild = opts.rebuild || null; intervalMs = opts.interval * 1000; loop = opts.loop;
+    base = opts.base || lastShowAll.length && lastShowAll || opts.list;
+    ({ mode: curMode, n: curN } = modeOpts());
     showCap = opts.caption; paused = !!opts.paused; errorsInRow = 0; walk = null; shown = null;
     el.style.setProperty('--fade', opts.fade ? '.6s' : '0s');
     el.classList.add('open'); open = true; Mini.sync();
@@ -1051,11 +1168,14 @@ const Show = (() => {
     ev.stopPropagation();
     const a = b.dataset.a;
     if (a === 'mini') Mini.toggle(); else if (a === 'map') toMap(); else if (a === 'pause') togglePause(); else if (a === 'close') close();
+    else if (a === 'opts') togglePanel();
   }));
 
   document.addEventListener('keydown', (ev) => {
     if (!open) return;
     const k = ev.key;
+    if (ev.target.matches && ev.target.matches('input[type=number], input[type=text], select') && k !== 'Escape') return;   // печатают в поле настроек
+    if (k === 'Escape' && !panel.hidden) { togglePanel(false); ev.preventDefault(); return; }
     if (k === 'ArrowDown' || k === 'PageDown') step(1);
     else if (k === 'ArrowUp' || k === 'PageUp') step(-1);
     else if (k === 'ArrowRight') spatial(1);
@@ -1063,11 +1183,14 @@ const Show = (() => {
     else if (k === ' ') togglePause();
     else if (k === 'Escape') close();
     else if (k === 'Home') display(0);
-    else if (k === '+' || k === '=') { intervalMs = Math.min(3600e3, intervalMs + 1000); flash(`Интервал ${intervalMs / 1000} с`); schedule(); }
-    else if (k === '-' || k === '_') { intervalMs = Math.max(1000, intervalMs - 1000); flash(`Интервал ${intervalMs / 1000} с`); schedule(); }
-    else if (k === 'i' || k === 'I' || k === 'ш' || k === 'Ш') { showCap = !showCap; cap.hidden = !showCap; }
+    else if (k === '+' || k === '=' || k === '-' || k === '_') {   // интервал — через то же поле, чтобы настройки не расходились
+      const v = Math.min(3600, Math.max(1, intervalMs / 1000 + (k === '+' || k === '=' ? 1 : -1)));
+      $('interval').value = v; saveSettings(); flash(`Интервал ${v} с`); applySettings();
+    }
+    else if (k === 'i' || k === 'I' || k === 'ш' || k === 'Ш') { $('caption').checked = !$('caption').checked; saveSettings(); applySettings(); }
     else if (k === 'm' || k === 'M' || k === 'ь' || k === 'Ь') toMap();
     else if (k === 'g' || k === 'G' || k === 'п' || k === 'П') Mini.toggle();
+    else if (k === 's' || k === 'S' || k === 'ы' || k === 'Ы') togglePanel();
     else if (k === 'f' || k === 'F' || k === 'а' || k === 'А') { document.fullscreenElement ? document.exitFullscreen() : el.requestFullscreen().catch(() => {}); }
     else return;
     ev.preventDefault();
@@ -1076,7 +1199,7 @@ const Show = (() => {
   el.addEventListener('click', (ev) => { ev.clientX < innerWidth / 3 ? step(-1) : step(1); });
   el.addEventListener('wheel', (ev) => { ev.deltaY > 0 ? step(1) : step(-1); }, { passive: true });
   el.addEventListener('mousemove', () => { el.classList.add('cursor'); clearTimeout(cursorTimer); cursorTimer = setTimeout(() => el.classList.remove('cursor'), 1500); });
-  return { start, close, get open() { return open; } };
+  return { start, close, applySettings, get open() { return open; } };
 })();
 
 function modeOpts() {
@@ -1124,7 +1247,7 @@ $('galleryBtn').onclick = () => openGallery(document.querySelector('input[name=s
 const MapView = (() => {
   if (!hasMap) {
     notice('Не загрузилась библиотека карты (папка lib/ рядом с index.html?). Слайд-шоу работает, карта — нет.', true, true);
-    return { setPoints() {}, focus() {}, visibleEntries: () => [], setLook() {}, map: null, points: [] };
+    return { setPoints() {}, focus() {}, visibleEntries: () => [], setLook() {}, map: null, points: [] };   // карта недоступна
   }
   let base = load('basemap', 'osm'); if (!BASEMAPS[base]) base = 'osm';
   const map = new maplibregl.Map({ container: 'map', style: BASEMAPS[base].style, center: [10, 30], zoom: 1.5,
@@ -1189,11 +1312,12 @@ const MapView = (() => {
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && selMode) { if (box) { box.remove(); box = null; } setSelMode(false); } });
   })();
 
-  // Плотность: 1…10 → радиус объединения в группу от 3¼ до 1 размера миниатюры.
-  // Радиус не меньше размера миниатюры — иначе соседние миниатюры налезают друг на друга.
+  // Плотность: 1…10 → радиус объединения в группу от 3 до 0,3 размера миниатюры.
+  // На максимуме миниатюры могут частично перекрываться — зато отдельных фото больше.
   let density = 6, size = 52, points = [], ready = false, popup = null, tempMarker = null;
   const MAXCZ = 19;                                   // выше этого масштаба группы не строятся
-  const radius = () => Math.round(size * (1 + (10 - density) * 0.25));
+  const radius = () => Math.round(size * (0.3 + (10 - density) * 0.3));
+  let coverZoom = 12, coverOn = false;      // с какого масштаба показывать на группе миниатюру первого фото
   const geo = () => ({ type: 'FeatureCollection', features: points.map((p, i) => ({ type: 'Feature', properties: { i },
     geometry: { type: 'Point', coordinates: [p.lon, p.lat] } })) });
   function addLayers() {
@@ -1214,6 +1338,8 @@ const MapView = (() => {
   function clearMarkers() { for (const m of markers.values()) m.remove(); markers.clear(); }
   function sync() {
     if (!ready || !map.getSource('photos') || !map.isSourceLoaded('photos')) return;
+    const cov = map.getZoom() >= coverZoom;
+    if (cov !== coverOn) { coverOn = cov; for (const [id, m] of markers) if (id[0] === 'c') { m.remove(); markers.delete(id); } }
     const seen = new Set();
     for (const f of map.querySourceFeatures('photos')) {
       const pr = f.properties, cl = !!pr.cluster;
@@ -1222,7 +1348,12 @@ const MapView = (() => {
       if (markers.has(id)) continue;
       const el = document.createElement('div');
       const [lon, lat] = f.geometry.coordinates;
-      if (cl) {
+      if (cl && coverOn) {                                    // обложка группы: миниатюра первого фото + число
+        el.className = 'ph cover'; el.style.width = el.style.height = size + 'px';
+        el.innerHTML = `<img alt=""><span class="cnt">${pr.point_count_abbreviated}</span>`;
+        el.title = `${pr.point_count} фото — щёлкните, чтобы приблизить`;
+        if (points[pr.first]) fillThumb(el, pr.first);
+      } else if (cl) {
         const n = pr.point_count, d = n < 10 ? 36 : n < 100 ? 42 : 48;
         el.className = 'clu' + (n < 10 ? '' : n < 100 ? ' m' : ' l');
         el.style.width = el.style.height = d + 'px';
@@ -1282,7 +1413,7 @@ const MapView = (() => {
     const { mode, n } = modeOpts();
     const list = paused ? [points[i].entry] : buildFrom(all, mode, n, key);
     const startAt = !paused && mode === 'order' ? Math.max(0, all.findIndex(e => e.key === key)) : 0;
-    Show.start({ list, startAt, paused, rebuild: paused ? null : () => buildPlaylist(all, mode, n), ...showOptions(), loop: paused ? false : $('loop').checked });
+    Show.start({ list, startAt, paused, base: all, rebuild: paused ? null : () => buildPlaylist(all, mode, n), ...showOptions(), loop: paused ? false : $('loop').checked });
   }
 
   function setPoints(pts, { fit = true } = {}) {
@@ -1296,8 +1427,8 @@ const MapView = (() => {
       map.fitBounds(b, { padding: 50, maxZoom: 15, duration: 0 });
     }
   }
-  function setLook(d, sz) {
-    density = d; size = sz;
+  function setLook(d, sz, cz) {
+    density = d; size = sz; if (cz != null) coverZoom = cz;
     const src = map.getSource('photos');
     if (src) src.setClusterOptions({ cluster: true, clusterRadius: radius(), clusterMaxZoom: MAXCZ });
     clearMarkers();
@@ -1365,7 +1496,7 @@ $('clearCache').onclick = async () => { await DB.clear('meta').catch(() => {}); 
 function saveSettings() {
   store('settings', {
     scope: document.querySelector('input[name=scope]:checked').value, mode: document.querySelector('input[name=mode]:checked').value,
-    density: $('density').value, thumbSize: $('thumbSize').value, rawSkip: $('rawSkip').checked,
+    density: $('density').value, thumbSize: $('thumbSize').value, coverZoom: $('coverZoom').value, rawSkip: $('rawSkip').checked,
     nth: $('nth').value, interval: $('interval').value, caption: $('caption').checked, fade: $('fade').checked, loop: $('loop').checked,
   });
 }
@@ -1373,20 +1504,23 @@ function saveSettings() {
   const s = load('settings', null); if (!s) return;
   const sc = document.querySelector(`input[name=scope][value="${s.scope}"]`); if (sc) sc.checked = true;
   $('rawSkip').checked = s.rawSkip !== false;
-  if (s.density) $('density').value = s.density; if (s.thumbSize) $('thumbSize').value = s.thumbSize;
+  if (s.density) $('density').value = s.density;
+  if (s.coverZoom) $('coverZoom').value = s.coverZoom; if (s.thumbSize) $('thumbSize').value = s.thumbSize;
   const r = document.querySelector(`input[name=mode][value="${s.mode}"]`); if (r) r.checked = true;
   if (s.nth) $('nth').value = s.nth; if (s.interval) $('interval').value = s.interval;
   $('caption').checked = s.caption !== false; $('fade').checked = s.fade !== false; $('loop').checked = s.loop !== false;
 })();
 document.querySelectorAll('aside input, aside select').forEach(i => i.addEventListener('change', saveSettings));
+$('playOpts').addEventListener('change', () => Show.applySettings());
 function applyLook() {
   const d = +$('density').value;
-  $('densityVal').textContent = d >= 9 ? 'максимум отдельных фото' : d <= 2 ? 'сильно группировать' : 'средне';
-  MapView.setLook(d, +$('thumbSize').value);
+  $('densityVal').textContent = d >= 9 ? 'максимум' : d <= 2 ? 'минимум' : 'средне';
+  MapView.setLook(d, +$('thumbSize').value, +$('coverZoom').value);
 }
 $('density').addEventListener('input', () => { $('densityVal').textContent = '…'; });
 $('density').addEventListener('change', applyLook);
 $('thumbSize').addEventListener('change', applyLook);
+$('coverZoom').addEventListener('change', applyLook);
 applyLook();
 
 if (!window.exifr) notice('Не загрузилась библиотека чтения EXIF (lib/exifr). Геометки и даты недоступны.', true, true);
