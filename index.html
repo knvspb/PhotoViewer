@@ -56,7 +56,8 @@
   details.more { margin-top: 8px; }
   details.more summary { font-size: 12px; color: var(--muted); cursor: pointer; }
   details.more[open] summary { margin-bottom: 4px; }
-  #playCard:not(:has(input[name=scope][value=selected]:checked)) .sel-l { display: none; }
+  #playOpts:not(:has(input[name=scope][value=selected]:checked)) .sel-l { display: none; }
+  #playOpts:not(:has(#auto:checked)) .chip:has(#interval) { opacity: .45; }
   .sel-l { margin-top: 4px; }
   main { position: relative; min-width: 0; z-index: 0; }
   #map { isolation: isolate; }   /* маркеры с z-index не должны вылезать поверх галереи и показа */
@@ -116,7 +117,9 @@
          padding: 4px 10px; border-radius: 6px; opacity: 0; transition: opacity .3s; pointer-events: none; }
   #osd.on { opacity: 1; }
   #tools { position: absolute; top: 12px; left: 16px; display: flex; gap: 6px; opacity: 0; transition: opacity .3s; }
-  #show.cursor #tools { opacity: 1; }
+  #show.cursor #tools, #show.view #tools { opacity: 1; }
+  #show.view .showonly, #show:not(.view) .viewonly { display: none; }
+  #tools .viewonly { background: rgba(37,99,235,.9); border-color: rgba(255,255,255,.4); font-weight: 600; }
   #tools button, #mini button { background: rgba(20,20,20,.75); color: #fff; border-color: rgba(255,255,255,.25); }
   #mini { position: absolute; right: 16px; bottom: 40px; width: min(420px, 45vw); height: min(320px, 45vh);
           background: #111; border: 1px solid rgba(255,255,255,.3); border-radius: 8px; overflow: hidden;
@@ -201,7 +204,7 @@
 <aside>
   <header class="top">
     <h1>PhotoShow</h1>
-    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-21.6</span>
+    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-21.7</span>
   </header>
 
   <section class="card">
@@ -226,15 +229,15 @@
 
   <section class="card" id="playCard">
     <div class="card-h">Просмотр</div>
-    <div class="lbl">Что показывать</div>
-    <div class="seg">
-      <label title="Отмеченные флажками папки"><input type="radio" name="scope" value="checked" checked>Отмеченные</label>
-      <label title="Выбранная папка с подпапками (щелчок по имени в дереве)"><input type="radio" name="scope" value="selected">Папка</label>
-      <label title="Фото с геометками в видимой части карты"><input type="radio" name="scope" value="map">На карте</label>
-      <label title="Все фото всех папок, без учёта флажков"><input type="radio" name="scope" value="all">Все</label>
-    </div>
-    <div id="selLabel" class="hint sel-l"></div>
     <div id="playOptsHome"><div id="playOpts">
+      <div class="lbl">Что показывать</div>
+      <div class="seg">
+        <label title="Отмеченные флажками папки"><input type="radio" name="scope" value="checked" checked>Отмеченные</label>
+        <label title="Выбранная папка с подпапками (щелчок по имени в дереве)"><input type="radio" name="scope" value="selected">Папка</label>
+        <label title="Фото с геометками в видимой части карты"><input type="radio" name="scope" value="map">На карте</label>
+        <label title="Все фото всех папок, без учёта флажков"><input type="radio" name="scope" value="all">Все</label>
+      </div>
+      <div id="selLabel" class="hint sel-l"></div>
       <div class="lbl">Порядок</div>
       <div class="seg">
         <label title="По именам папок и файлов"><input type="radio" name="mode" value="order" checked>Подряд</label>
@@ -243,6 +246,7 @@
           <input type="radio" name="mode" value="nth">Шаг ≈<input type="number" id="nth" min="2" max="1000" value="5" class="inl"></label>
       </div>
       <div class="chips">
+        <label class="chip" title="Автоматическая смена кадров по таймеру. Выключите — листать вручную (↑/↓, клик, колесо)"><input type="checkbox" id="auto" checked>Авто</label>
         <label class="chip" title="Интервал смены кадров, секунд">⏱<input type="number" id="interval" min="1" max="3600" step="0.5" value="5" class="inl">с</label>
         <label class="chip" title="Путь и дата съёмки внизу кадра"><input type="checkbox" id="caption" checked>Подпись</label>
         <label class="chip" title="Плавная смена кадров"><input type="checkbox" id="fade" checked>Плавно</label>
@@ -256,9 +260,9 @@
     <details class="more">
       <summary>Клавиши в просмотре</summary>
       <div class="keys">
-        <kbd>↑</kbd><kbd>↓</kbd> по порядку показа · <kbd>←</kbd><kbd>→</kbd> соседние фото на карте · <kbd>Пробел</kbd> пауза ·
+        <kbd>↑</kbd><kbd>↓</kbd> по порядку показа (в просмотре — соседние фото во всех папках) · <kbd>←</kbd><kbd>→</kbd> соседние фото на карте · <kbd>Пробел</kbd> пауза ·
         <kbd>+</kbd><kbd>−</kbd> интервал · <kbd>S</kbd> настройки · <kbd>I</kbd> подпись · <kbd>G</kbd> мини-карта · <kbd>M</kbd> к карте ·
-        <kbd>F</kbd> полный экран · <kbd>Esc</kbd> выход (из галереи — обратно в неё)
+        <kbd>F</kbd> полный экран · <kbd>Пробел</kbd> в просмотре — слайд-шоу отсюда · <kbd>Esc</kbd> выход (из галереи — обратно в неё)
       </div>
     </details>
   </section>
@@ -312,7 +316,7 @@
   <img id="imgA" alt=""><img id="imgB" alt="">
   <div id="cap"></div><div id="osd"></div><div id="bar"></div>
   <div id="showPanel" hidden><div class="sp-h"><b>Настройки показа</b><span class="grow"></span><button data-a="opts" title="Закрыть (S)">✕</button></div></div>
-  <div id="tools"><button data-a="mini" title="Мини-карта (G)">📍 Мини-карта</button><button data-a="map" title="Прервать и перейти к карте (M)">🗺 К карте</button><button data-a="pause" title="Пауза (Пробел)">⏯</button><button data-a="opts" title="Настройки показа (S)">⚙</button><button data-a="close" title="Выход (Esc)">✕</button></div>
+  <div id="tools"><button data-a="mini" title="Мини-карта (G)">📍 Мини-карта</button><button data-a="map" title="Прервать и перейти к карте (M)">🗺 К карте</button><button data-a="play" class="viewonly" title="Слайд-шоу с этого фото (Пробел)">▶ Слайд-шоу отсюда</button><button data-a="pause" class="showonly" title="Пауза (Пробел)">⏯</button><button data-a="opts" title="Настройки показа (S)">⚙</button><button data-a="close" title="Выход (Esc)">✕</button></div>
   <div id="mini"><div id="miniMap"></div>
     <div id="miniBar"><span id="miniInfo"></span><button data-a="map" title="Прервать показ и открыть большую карту на этом фото">🗺 Перейти к карте</button><button data-a="mini" title="Скрыть (G)">✕</button></div></div>
 </div>
@@ -430,6 +434,7 @@ async function loadSources() {
   renderSources();
 }
 async function persistSources() {
+  dropListCache();
   try {
     const keep = sources.filter(s => s.kind === 'handle');
     const ids = new Set(keep.map(s => s.id));
@@ -457,6 +462,7 @@ function addFileList(fileList) {
     if (!groups.has(root)) groups.set(root, []);
     groups.get(root).push({ rel: parts.length > 1 ? parts.slice(1).join('/') : rel, file: f });
   }
+  dropListCache();
   for (const [name, files] of groups) {
     const tree = { name, path: '', children: [] }, idx = new Map([['', tree]]);
     for (const f of files) {
@@ -608,6 +614,7 @@ document.addEventListener('drop', async (e) => {
 // entry: { key, srcId, dir (путь папки внутри источника), name, path (для подписи), getFile() }
 // opt: { root — с какой папки начинать, from — для isExcluded, ignore — не учитывать отметки вовсе }
 const rawSkip = () => $('rawSkip').checked;
+$('rawSkip').addEventListener('change', dropListCache);
 async function listSource(src, opt, onCount) {
   const { root = '', from = null, ignore = false } = opt;
   const skip = (dir) => !ignore && isExcluded(src, dir, from);
@@ -657,8 +664,19 @@ function cmpPaths(a, b) {
   return a.length - b.length;
 }
 
+// Кэш списков файлов: сбрасывается при любом изменении папок/отметок/опций
+const listCache = new Map();
+function dropListCache() { listCache.clear(); }
 // scope: 'checked' — отмеченные папки; 'all' — всё без учёта отметок; 'selected' — выбранная папка с подпапками
-async function collect(scope = 'checked') {
+// cached: взять готовый список, если он есть (для быстрого просмотра); иначе — читать папки заново
+async function collect(scope = 'checked', { cached = false } = {}) {
+  const ck = scope + '|' + (scope === 'selected' && selected ? selected.srcId + '/' + selected.path : '');
+  if (cached && listCache.has(ck)) return listCache.get(ck);
+  const res = await collectFresh(scope);
+  if (res) listCache.set(ck, res);
+  return res;
+}
+async function collectFresh(scope) {
   let jobs;
   if (scope === 'all') jobs = sources.map(s => ({ src: s, opt: { ignore: true } }));
   else if (scope === 'selected') {
@@ -946,9 +964,8 @@ const Gallery = (() => {
     const t = ev.target.closest('.tile'); if (!t) return;
     const i = +t.dataset.i, e = list[i];
     if (ev.target.closest('.geo')) { const g = gpsMem.get(e.key); close(); MapView.focus(g.lat, g.lon, e); return; }
-    // просмотр: тот же набор, с этой фотографии, на паузе — листать стрелками; Esc вернёт в галерею
-    lastShowAll = list;
-    Show.start({ list, startAt: i, paused: true, ...showOptions(), loop: true });
+    // просмотр: с этой фотографии, листать соседние по всем папкам; Esc вернёт в галерею
+    Show.view(e);
   });
   $('gPlay').onclick = () => {
     const all = list, { mode, n } = modeOpts(), rebuild = () => buildPlaylist(all, mode, n);
@@ -974,6 +991,8 @@ const Show = (() => {
   let rebuild = null, intervalMs = 5000, loop = true, showCap = true, errorsInRow = 0;
   let shown = null;                 // фото на экране: list[idx] или «отступление» по карте
   let base = [], curMode = '', curN = 0;   // полный набор показа и порядок, по которому построен list
+  let viewMode = false, auto = true, curScope = '';  // просмотр (без таймера, все папки) / автосмена / набор показа
+  const scopeNow = () => document.querySelector('input[name=scope]:checked').value;
   // Прогулка по карте (←/→): путь из показанных фото и множество уже посещённых
   let walk = null;                  // { path: [entry], seen: Set<key> }
   const cache = new Map();          // entry.key -> Promise<{url, file, ok}>; небольшой LRU
@@ -1027,7 +1046,7 @@ const Show = (() => {
     }
     if (i < 0) i = list.length - 1;
     idx = i;
-    const r = await render(list[i], `${i + 1} / ${list.length}`, my);
+    const r = await render(list[i], viewMode ? `Просмотр · все папки · ${i + 1} / ${list.length}` : `${i + 1} / ${list.length}`, my);
     if (!r) return;
     if (!r.ok) {                    // например HEIC в Chrome или битый файл — пропускаем
       console.warn('Не удалось показать', list[i].path, r.err || '');
@@ -1100,7 +1119,7 @@ const Show = (() => {
 
   function schedule() {
     clearTimeout(timer);
-    if (paused || !open) return;
+    if (paused || !open || viewMode || !auto) { bar.style.transition = 'none'; bar.style.width = '0'; return; }
     bar.style.transition = 'none'; bar.style.width = '0'; void bar.offsetWidth;
     bar.style.transition = `width ${intervalMs}ms linear`; bar.style.width = '100%';
     const my = token;
@@ -1120,6 +1139,9 @@ const Show = (() => {
     if (!open) return;
     const o = showOptions(), { mode, n } = modeOpts();
     intervalMs = o.interval * 1000; loop = o.loop;
+    if (o.auto !== auto) { auto = o.auto; if (!viewMode) flash(auto ? `Автосмена: ${o.interval} с` : 'Ручное листание: ↑↓, клик, колесо'); }
+    if (!viewMode && scopeNow() !== curScope) { playFromHere(); return; }   // сменили набор — пересобираем с текущего фото
+    if (viewMode) { schedule(); return; }
     el.style.setProperty('--fade', o.fade ? '.6s' : '0s');
     if (o.caption !== showCap) { showCap = o.caption; cap.hidden = !showCap; }
     if ((mode !== curMode || n !== curN) && base.length > 1) {
@@ -1147,11 +1169,40 @@ const Show = (() => {
     base = opts.base || lastShowAll.length && lastShowAll || opts.list;
     ({ mode: curMode, n: curN } = modeOpts());
     showCap = opts.caption; paused = !!opts.paused; errorsInRow = 0; walk = null; shown = null;
+    viewMode = !!opts.view; auto = opts.auto !== false; curScope = scopeNow();
+    el.classList.toggle('view', viewMode); cap.hidden = !showCap;
     el.style.setProperty('--fade', opts.fade ? '.6s' : '0s');
     el.classList.add('open'); open = true; Mini.sync();
     try { await el.requestFullscreen(); } catch (e) {}
     display(opts.startAt || 0);
-    if (paused) flash('Пауза');
+    if (viewMode) flash('Просмотр: ↑↓ — соседние фото, ←→ — соседи на карте, Пробел — слайд-шоу отсюда');
+    else if (paused) flash('Пауза');
+    else if (!auto) flash('Ручное листание: ↑↓, клик, колесо');
+  }
+  // Просмотр одного фото: листаем соседние по всем папкам (порядок имён), без таймера
+  async function view(entry) {
+    let all = await collect('all', { cached: true }) || [];
+    let i = all.findIndex(x => x.key === entry.key);
+    if (i < 0) { all = [entry]; i = 0; }
+    start({ list: all, base: all, startAt: i, view: true, ...showOptions(), loop: true });
+  }
+  // ▶ Слайд-шоу с текущего фото (из просмотра) или смена набора на ходу — по текущим настройкам
+  async function playFromHere() {
+    const e = shown || list[idx]; if (!e) return;
+    const scope = scopeNow();
+    flash('Готовлю набор…');
+    const all = await scopeEntries(scope, true);
+    if (!open) return;
+    if (!all) { flash($('notice').textContent || 'Набор пуст'); return; }
+    const { mode, n } = modeOpts(), inSet = all.some(x => x.key === e.key);
+    base = all; lastShowAll = all; curScope = scope; curMode = mode; curN = n;
+    list = inSet ? buildFrom(all, mode, n, e.key) : buildPlaylist(all, mode, n);
+    const start = inSet && mode === 'order' ? all.findIndex(x => x.key === e.key) : 0;
+    rebuild = mode === 'order' ? null : () => buildPlaylist(all, mode, n);
+    viewMode = false; el.classList.remove('view'); paused = false; walk = null;
+    const o = showOptions(); auto = o.auto; intervalMs = o.interval * 1000; loop = o.loop;
+    await display(start);
+    flash(`▶ ${scopeTitle(scope)}${inSet ? '' : ' — этого фото нет в наборе, показ с начала'}${auto ? '' : ' · ручное листание'}`);
   }
   // Прервать показ и перейти к большой карте на текущем фото
   async function toMap() {
@@ -1172,6 +1223,7 @@ const Show = (() => {
     const a = b.dataset.a;
     if (a === 'mini') Mini.toggle(); else if (a === 'map') toMap(); else if (a === 'pause') togglePause(); else if (a === 'close') close();
     else if (a === 'opts') togglePanel();
+    else if (a === 'play') playFromHere();
   }));
 
   document.addEventListener('keydown', (ev) => {
@@ -1183,7 +1235,7 @@ const Show = (() => {
     else if (k === 'ArrowUp' || k === 'PageUp') step(-1);
     else if (k === 'ArrowRight') spatial(1);
     else if (k === 'ArrowLeft') spatial(-1);
-    else if (k === ' ') togglePause();
+    else if (k === ' ') viewMode ? playFromHere() : togglePause();
     else if (k === 'Escape') close();
     else if (k === 'Home') display(0);
     else if (k === '+' || k === '=' || k === '-' || k === '_') {   // интервал — через то же поле, чтобы настройки не расходились
@@ -1202,7 +1254,7 @@ const Show = (() => {
   el.addEventListener('click', (ev) => { ev.clientX < innerWidth / 3 ? step(-1) : step(1); });
   el.addEventListener('wheel', (ev) => { ev.deltaY > 0 ? step(1) : step(-1); }, { passive: true });
   el.addEventListener('mousemove', () => { el.classList.add('cursor'); clearTimeout(cursorTimer); cursorTimer = setTimeout(() => el.classList.remove('cursor'), 1500); });
-  return { start, close, applySettings, get open() { return open; } };
+  return { start, view, close, applySettings, get open() { return open; } };
 })();
 
 function modeOpts() {
@@ -1210,19 +1262,19 @@ function modeOpts() {
 }
 function showOptions() {
   return {
-    interval: Math.max(1, parseFloat($('interval').value) || 5),
+    interval: Math.max(1, parseFloat($('interval').value) || 5), auto: $('auto').checked,
     caption: $('caption').checked, fade: $('fade').checked, loop: $('loop').checked,
   };
 }
 const SCOPE_TITLES = { checked: 'Отмеченные папки', all: 'Все папки', map: 'Видимая часть карты' };
-async function scopeEntries(scope) {
+async function scopeEntries(scope, cached = false) {
   saveSettings(); notice('');
   if (scope === 'map') {
     const all = MapView.visibleEntries();
     if (!all.length) { notice(MapView.points.length ? 'В видимой части карты нет фото — отдалите карту.' : 'Сначала постройте карту: «Найти фото с геометками».'); return null; }
     return all;
   }
-  return collect(scope);
+  return collect(scope, { cached });
 }
 function scopeTitle(scope) {
   if (scope !== 'selected') return SCOPE_TITLES[scope];
@@ -1405,7 +1457,7 @@ const MapView = (() => {
     let url = null;
     p.entry.getFile().then(displayBlob).then(b => { url = URL.createObjectURL(b); box.querySelector('img').src = url; }).catch(() => {});   // крупное превью
     box.querySelector('[data-a=show]').onclick = () => startFrom(i, false);
-    box.querySelector('[data-a=open]').onclick = () => startFrom(i, true);
+    box.querySelector('[data-a=open]').onclick = () => Show.view(points[i].entry);
     popup = new maplibregl.Popup({ maxWidth: '320px', offset: size / 2 + 2 }).setLngLat([p.lon, p.lat]).setDOMContent(box).addTo(map);
     popup.on('close', () => { if (url) URL.revokeObjectURL(url); });
   }
@@ -1499,7 +1551,7 @@ $('clearCache').onclick = async () => { await DB.clear('meta').catch(() => {}); 
 function saveSettings() {
   store('settings', {
     scope: document.querySelector('input[name=scope]:checked').value, mode: document.querySelector('input[name=mode]:checked').value,
-    density: $('density').value, thumbSize: $('thumbSize').value, coverZoom: $('coverZoom').value, rawSkip: $('rawSkip').checked,
+    auto: $('auto').checked, density: $('density').value, thumbSize: $('thumbSize').value, coverZoom: $('coverZoom').value, rawSkip: $('rawSkip').checked,
     nth: $('nth').value, interval: $('interval').value, caption: $('caption').checked, fade: $('fade').checked, loop: $('loop').checked,
   });
 }
@@ -1508,7 +1560,8 @@ function saveSettings() {
   const sc = document.querySelector(`input[name=scope][value="${s.scope}"]`); if (sc) sc.checked = true;
   $('rawSkip').checked = s.rawSkip !== false;
   if (s.density) $('density').value = s.density;
-  if (s.coverZoom) $('coverZoom').value = s.coverZoom; if (s.thumbSize) $('thumbSize').value = s.thumbSize;
+  if (s.coverZoom) $('coverZoom').value = s.coverZoom;
+  $('auto').checked = s.auto !== false; if (s.thumbSize) $('thumbSize').value = s.thumbSize;
   const r = document.querySelector(`input[name=mode][value="${s.mode}"]`); if (r) r.checked = true;
   if (s.nth) $('nth').value = s.nth; if (s.interval) $('interval').value = s.interval;
   $('caption').checked = s.caption !== false; $('fade').checked = s.fade !== false; $('loop').checked = s.loop !== false;
