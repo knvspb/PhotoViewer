@@ -60,6 +60,9 @@
   details.more[open] summary { margin-bottom: 4px; }
   #playOpts:not(:has(input[name=scope][value=selected]:checked)) .sel-l { display: none; }
   #playOpts:not(:has(#auto:checked)) .chip:has(#interval) { opacity: .45; }
+  #playOpts:not(:has(input[name=mode][value=smart]:checked)) .smartonly { display: none; }
+  #playOpts:not(:has(input[name=mode][value=nth]:checked)):not(:has(input[name=mode][value=smart]:checked)) .nlab { opacity: .45; }
+  .seg label.nlab { flex: 0 0 auto; cursor: default; }
   .sel-l { margin-top: 4px; }
   #camList .chip .n { color: var(--muted); font-size: 11px; }
   #camList { max-height: 140px; overflow-y: auto; }
@@ -117,6 +120,10 @@
   #show.zoomed, #show.zoomed.cursor { cursor: grab; }
   #show.dragging, #show.dragging.cursor { cursor: grabbing; }
   #show img.on { opacity: 1; }
+  #show video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: none; background: #000; transform-origin: 50% 50%; }
+  #show video.on { display: block; }
+  .tile .vb, .ph .vb { position: absolute; left: 4px; bottom: 4px; padding: 0 5px; border-radius: 4px; background: rgba(0,0,0,.65); color: #fff; font: 600 11px/18px system-ui, sans-serif; }
+  .ph .vb { left: 2px; bottom: 2px; font-size: 10px; line-height: 14px; }
   #cap { position: absolute; left: 16px; bottom: 14px; right: 16px; color: #fff; font-size: 14px;
          text-shadow: 0 1px 3px #000, 0 0 8px #000; pointer-events: none; white-space: pre-line; }
   #place { position: absolute; left: 16px; bottom: 58px; right: 16px; color: #fff; font: 600 clamp(22px, 3.4vw, 48px)/1.15 system-ui, sans-serif;
@@ -169,6 +176,7 @@
   /* --- галерея --- */
   #gallery { position: fixed; inset: 0; z-index: 4000; background: var(--bg); display: flex; flex-direction: column; }
   #gallery[hidden] { display: none; }
+  #gFavOnly.on { background: #ffd54a; color: #222; border-color: #e0b400; }
   .ghead { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   .ghead b { font-size: 16px; }
   .gsz { display: flex; align-items: center; gap: 6px; }
@@ -231,7 +239,7 @@
 <aside>
   <header class="top">
     <h1>letseetheworld <span style="font-weight:500">PhotoViewer</span></h1>
-    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-22.1</span>
+    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-22.2</span>
   </header>
 
   <section class="card">
@@ -272,8 +280,13 @@
         <label title="По именам папок и файлов"><input type="radio" name="mode" value="order" checked>Подряд</label>
         <label title="Полностью случайно, без повторов"><input type="radio" name="mode" value="random">Случайно</label>
         <label title="По порядку со случайным шагом, в среднем N (например 1, 10, 15, 23…); дойдя до конца — новый проход по ещё не показанным">
-          <input type="radio" name="mode" value="nth">Шаг ≈<input type="number" id="nth" min="2" max="1000" value="5" class="inl"></label>
+          <input type="radio" name="mode" value="nth">Шаг ≈</label>
+        <label title="Умный: из каждой серии похожих кадров — один (самый резкий), дальше — шаг ≈ N по уникальным. N = 1 — все уникальные подряд">
+          <input type="radio" name="mode" value="smart">Умный</label>
+        <label class="nlab" title="Средний шаг N для режимов «Шаг» и «Умный»">N<input type="number" id="nth" min="1" max="1000" value="5" class="inl"></label>
       </div>
+      <div class="kv smartonly" title="Насколько похожими должны быть кадры, чтобы считаться одной серией">
+        <span>Похожесть</span><input type="range" id="simThr" min="4" max="20" value="12"><span id="simVal" class="hint"></span></div>
       <div class="lbl">Сортировка</div>
       <div class="row" style="gap:6px;flex-wrap:nowrap">
         <div class="seg grow">
@@ -313,6 +326,9 @@
     <div class="card-h">Фильтр <span class="grow"></span><span id="fltState" class="hint"></span>
       <button id="fltReset" class="sm" hidden title="Показывать всё">сбросить</button></div>
     <div class="chips sm" id="fmtChips">
+      <label class="chip" title="Фотографии (все форматы ниже)"><input type="checkbox" data-fmt="photo" checked><b>Фото</b></label>
+      <label class="chip" title="Видео с телефона: MP4, MOV, 3GP, WebM, MKV. По умолчанию выключено"><input type="checkbox" data-fmt="video"><b>Видео</b></label>
+      <span style="width:6px"></span>
       <label class="chip" title=".jpg, .jpeg"><input type="checkbox" data-fmt="jpg" checked>JPG</label>
       <label class="chip" title="CR2, CR3, NEF, ARW, DNG, RAF, ORF, RW2…"><input type="checkbox" data-fmt="raw" checked>RAW</label>
       <label class="chip" title=".heic, .heif (iPhone)"><input type="checkbox" data-fmt="heic" checked>HEIC</label>
@@ -329,7 +345,11 @@
 
   <section class="card" id="favCard">
     <div class="card-h">★ Избранное <span id="favCount" class="hint" style="text-transform:none">0</span><span class="grow"></span>
-      <button id="favShow" class="sm" title="Слайд-шоу по избранному">▶</button><button id="favGal" class="sm" title="Галерея избранного">▦</button></div>
+      </div>
+    <div class="row" style="gap:6px">
+      <button id="favGal" class="primary sm grow" title="Отдельная галерея только из избранного">▦ Галерея избранного</button>
+      <button id="favShow" class="sm grow" title="Слайд-шоу по избранному">▶ Слайд-шоу</button>
+    </div>
     <div class="hint">Отметить фото: <kbd>L</kbd> или ☆ в просмотре, звезда на плитке галереи и в карточке на карте.</div>
     <div class="row" style="margin-top:6px;gap:6px">
       <button id="favExport" class="sm" title="Сохранить список в CSV (путь; имя; дата; широта; долгота)">⤓ Экспорт</button>
@@ -385,6 +405,7 @@
 <div id="gallery" hidden>
   <div class="ghead">
     <b id="gTitle"></b><span id="gCount" class="hint"></span><span class="grow"></span>
+    <button id="gFavOnly" class="sm" title="Показать в этой галерее только избранное">☆ только избранное</button>
     <label class="hint gsz">Размер <input type="range" id="gSize" min="90" max="300" value="150"></label>
     <button id="gPlay" class="primary" title="Слайд-шоу по этому набору в выбранном порядке">▶ Слайд-шоу</button>
     <button id="gClose" title="Закрыть (Esc)">✕</button>
@@ -393,7 +414,7 @@
 </div>
 
 <div id="show">
-  <img id="imgA" alt=""><img id="imgB" alt="">
+  <img id="imgA" alt=""><img id="imgB" alt=""><video id="vid" playsinline controls preload="auto"></video>
   <div id="place"></div><div id="cap"></div><div id="osd"></div><div id="bar"></div>
   <div id="showPanel" hidden><div class="sp-h"><b>Настройки показа</b><span class="grow"></span><button data-a="opts" title="Закрыть (S)">✕</button></div></div>
   <div id="tools"><button data-a="mini" title="Мини-карта (G)">📍 Мини-карта</button><button data-a="map" title="Прервать и перейти к карте (M)">🗺 К карте</button><button data-a="play" class="viewonly" title="Слайд-шоу с этого фото (Пробел)">▶ Слайд-шоу отсюда</button><button data-a="pause" class="showonly" title="Пауза (Пробел)">⏯</button><button data-a="opts" title="Настройки показа (S)">⚙</button><button data-a="fav" id="favBtn" title="В избранное (L)">☆</button><button data-a="close" title="Выход (Esc)">✕</button></div>
@@ -406,7 +427,10 @@
 /* ============================ утилиты ============================ */
 const $ = (id) => document.getElementById(id);
 const RAW_RE = /\.(cr2|cr3|crw|nef|nrw|arw|srf|sr2|dng|raf|orf|rw2|rwl|pef|srw|x3f|3fr|fff|iiq|erf|kdc|mrw|mos|mef|gpr)$/i;
-const IMG_RE = /\.(jpe?g|png|gif|webp|bmp|avif|heic|heif|tiff?|cr2|cr3|crw|nef|nrw|arw|srf|sr2|dng|raf|orf|rw2|rwl|pef|srw|x3f|3fr|fff|iiq|erf|kdc|mrw|mos|mef|gpr)$/i;
+const VIDEO_RE = /\.(mp4|mov|m4v|3gp|webm|mkv)$/i;
+// всё, что попадает в списки: фото, RAW и видео (видео отсекает фильтр, по умолчанию оно выключено)
+const IMG_RE = /\.(jpe?g|png|gif|webp|bmp|avif|heic|heif|tiff?|cr2|cr3|crw|nef|nrw|arw|srf|sr2|dng|raf|orf|rw2|rwl|pef|srw|x3f|3fr|fff|iiq|erf|kdc|mrw|mos|mef|gpr|mp4|mov|m4v|3gp|webm|mkv)$/i;
+const isVideo = (e) => VIDEO_RE.test(e.name || e);
 const baseName = (n) => n.replace(/\.[^.]+$/, '').toLowerCase();
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 const cmpName = (a, b) => collator.compare(a, b);
@@ -560,7 +584,7 @@ const YA = (() => {
   // «2019-06-12T10:20:30+03:00» → «2019:06:12 10:20:30» (как в EXIF, местное время съёмки)
   const exifDate = (s) => s ? String(s).replace(/^(\d{4})-(\d\d)-(\d\d)T(\d\d:\d\d:\d\d).*$/, '$1:$2:$3 $4') : '';
   function metaOf(it) {
-    const x = it.exif || {}, v = { date: exifDate(x.date_time), model: '' };
+    const x = it.exif || {}, v = { date: exifDate(x.date_time || it.photoslice_time), model: '' };
     const lat = +x.gps_latitude, lon = +x.gps_longitude;
     if (x.gps_latitude != null && Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0)) { v.lat = lat; v.lon = lon; }
     return v;
@@ -940,14 +964,14 @@ async function collect(scope = 'checked', { cached = false, nofilter = false } =
     const all = await collect('all', { cached: true, nofilter: true }); if (!all) return null;
     let favs = all.filter(e => Fav.has(e));
     if (!favs.length) { notice('Отмеченные фото не найдены в подключённых папках (папку убрали или переименовали?).'); return null; }
-    if (!nofilter && filterActive()) favs = await applyFilter(favs);
+    if (!nofilter) favs = await applyFilter(favs);
     return nofilter ? favs : sortList(favs);
   }
   const ck = scope + '|' + (scope === 'selected' && selected ? selected.srcId + '/' + selected.path : '');
   let raw = cached && listCache.get(ck);
   if (!raw) { raw = await collectFresh(scope); if (!raw) return null; listCache.set(ck, raw); }
   if (nofilter) return raw;
-  const out = filterActive() ? await applyFilter(raw) : raw;
+  const out = await applyFilter(raw);                             // всегда: хотя бы чтобы отсечь видео, если оно выключено
   if (!out.length) { notice(`Фильтр скрыл все ${raw.length} фото этого набора — проверьте карточку «Фильтр».`); return null; }
   return sortList(out);
 }
@@ -990,8 +1014,11 @@ async function collectFresh(scope) {
 function buildPlaylist(all, mode, n) {
   if (mode === 'random') return shuffle(all.slice());
   if (mode === 'nth') return strideOrder(all, n, -1);
+  if (mode === 'smart') return strideOrder(Similar.uniques(all), n, -1);   // перед этим — await Similar.prepare(all)
   return all.slice();
 }
+// Для «умного» режима сначала нужно посчитать серии (асинхронно, с кэшем)
+async function preparePlaylist(all, mode, onProgress) { if (mode === 'smart') await Similar.prepare(all, onProgress); }
 
 // Режим «по порядку со случайным шагом»: идём по списку вперёд, шаг случайный, равномерно 1…2N−1 (среднее = N).
 // Дошли до конца — новый проход по ещё не показанным, и так пока не покажем все.
@@ -1013,11 +1040,114 @@ function strideOrder(all, n, startIdx) {
   return out;
 }
 
+/* ============================ умный рандом: серии похожих кадров ============================ */
+// Отпечаток кадра: dHash 9×8 по яркости (64 бита) + резкость (дисперсия лапласиана 48×48) — по миниатюре.
+// Серия: соседние по времени съёмки кадры (≤ 3 мин) с близким отпечатком (расстояние Хэмминга ≤ порога);
+// без даты — соседи по имени с очень близким отпечатком. Из серии берётся самый резкий кадр. Видео — всегда уникальны.
+const Similar = (() => {
+  // Отпечаток: яркость 16×16 по миниатюре (сравнение — нормированная корреляция, устойчива к сдвигу и размытию).
+  // Резкость: дисперсия лапласиана по изображению 640 px — считается только для кадров, попавших в серию.
+  const sigMem = new Map(), sharpMem = new Map(), groups = new WeakMap();
+  const ncc = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s / a.length; };
+  // ползунок 4…20 → порог корреляции 0.97 (почти одинаковые) … 0.81 (просто похожие)
+  const thr = () => 0.97 - (+$('simThr').value - 4) * 0.01;
+  async function statKey(e, pre) {
+    try { const st = e.cloud ? { size: e.cloud.size, lastModified: e.cloud.mtime } : await e.getFile(); return `${pre}|${e.key}|${st.size}|${st.lastModified}`; }
+    catch (err) { return null; }
+  }
+  async function sigOf(e) {
+    if (sigMem.has(e.key)) return sigMem.get(e.key);
+    const ck = await statKey(e, 'sg2');
+    const c0 = ck && await DB.get('meta', ck).catch(() => null); if (c0) { sigMem.set(e.key, c0); return c0; }
+    const url = await Thumbs.get(e);
+    if (!url) { sigMem.set(e.key, null); return null; }
+    const bmp = await createImageBitmap(await (await fetch(url)).blob());
+    const c = document.createElement('canvas'), g = c.getContext('2d', { willReadFrequently: true });
+    c.width = 16; c.height = 16; g.imageSmoothingQuality = 'high'; g.drawImage(bmp, 0, 0, 16, 16); bmp.close && bmp.close();
+    const d = g.getImageData(0, 0, 16, 16).data, v = new Array(256);
+    let m = 0; for (let i = 0; i < 256; i++) { v[i] = d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114; m += v[i]; }
+    m /= 256; let sd = 0; for (let i = 0; i < 256; i++) { v[i] -= m; sd += v[i] * v[i]; }
+    sd = Math.sqrt(sd / 256) || 1; for (let i = 0; i < 256; i++) v[i] = +(v[i] / sd).toFixed(3);
+    const sg = { v };
+    sigMem.set(e.key, sg); if (ck) DB.put('meta', sg, ck).catch(() => {});
+    return sg;
+  }
+  async function sharpOf(e) {
+    if (sharpMem.has(e.key)) return sharpMem.get(e.key);
+    const ck = await statKey(e, 'sh');
+    const c0 = ck && await DB.get('meta', ck).catch(() => null); if (c0 != null) { sharpMem.set(e.key, c0); return c0; }
+    let val = 0;
+    try {
+      const f = await e.getFile(), src = RAW_RE.test(f.name) ? await displayBlob(f) : f;
+      const bmp = await createImageBitmap(src);
+      const k = 640 / Math.max(bmp.width, bmp.height), W = Math.round(bmp.width * k), H = Math.round(bmp.height * k);
+      const c = document.createElement('canvas'); c.width = W; c.height = H;
+      const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(bmp, 0, 0, W, H); bmp.close && bmp.close();
+      const q = g.getImageData(0, 0, W, H).data, L = (x, y) => q[(y * W + x) * 4 + 1];
+      let s1 = 0, s2 = 0, n = 0;
+      for (let y = 1; y < H - 1; y += 1) for (let x = 1; x < W - 1; x += 1) { const t = 4 * L(x, y) - L(x - 1, y) - L(x + 1, y) - L(x, y - 1) - L(x, y + 1); s1 += t; s2 += t * t; n++; }
+      val = s2 / n - (s1 / n) ** 2;
+    } catch (err) { val = 0; }        // облако без скачивания и т. п. — резкость неизвестна
+    sharpMem.set(e.key, val); if (ck) DB.put('meta', val, ck).catch(() => {});
+    return val;
+  }
+  const tsec = (d) => { const m = /^(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d):(\d\d)/.exec(d || ''); return m ? Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]) / 1000 : null; };
+  async function prepare(list, onProgress) {
+    const T = thr(), g0 = groups.get(list);
+    if (g0 && g0.thr === T) return g0;
+    await ensureMeta(list, (d, n) => onProgress && onProgress(`Чтение дат: ${d} / ${n}`));
+    const photos = list.filter(e => !isVideo(e));
+    let next = 0, done = 0;
+    await Promise.all(Array.from({ length: 4 }, async () => {
+      while (next < photos.length) { const e = photos[next++]; try { await sigOf(e); } catch (err) { sigMem.set(e.key, null); } if (++done % 10 === 0 || done === photos.length) onProgress && onProgress(`Анализ похожих кадров: ${done} / ${photos.length}`); }
+    }));
+    // кадры по времени съёмки (без даты — в порядке списка, после датированных)
+    const idx = list.map((e, i) => ({ e, i, t: tsec((metaMem.get(e.key) || {}).date) }));
+    const seq = idx.filter(x => x.t != null).sort((a, b) => a.t - b.t || a.i - b.i).concat(idx.filter(x => x.t == null));
+    const allSeries = []; let cur = [];
+    for (const x of seq) {
+      const prev = cur[cur.length - 1];
+      const a = sigMem.get(x.e.key), b = prev && sigMem.get(prev.e.key);
+      const same = prev && a && b && !isVideo(x.e) && !isVideo(prev.e) && (
+        (x.t != null && prev.t != null && Math.abs(x.t - prev.t) <= 180 && ncc(a.v, b.v) >= T) ||
+        ((x.t == null || prev.t == null) && ncc(a.v, b.v) >= Math.max(T, 0.95)));
+      if (!same && cur.length) { allSeries.push(cur); cur = []; }
+      cur.push(x);
+    }
+    if (cur.length) allSeries.push(cur);
+    // в сериях из нескольких кадров — выбираем самый резкий
+    const rep = new Map(); let nSeries = 0, sdone = 0;
+    const multi = allSeries.filter(s => s.length > 1), total = multi.reduce((n, s) => n + s.length, 0);
+    for (const sr of allSeries) {
+      let best = sr[0];
+      if (sr.length > 1) {
+        nSeries++; let bv = -1;
+        for (const x of sr) { const v = await sharpOf(x.e); if (v > bv) { bv = v; best = x; } if (++sdone % 5 === 0) onProgress && onProgress(`Выбор самого резкого кадра: ${sdone} / ${total}`); }
+      }
+      for (const x of sr) rep.set(x.e.key, best.e.key);
+    }
+    const keep = new Set(rep.values());
+    const res = { thr: T, rep, uniques: list.filter(e => keep.has(e.key)), series: nSeries };
+    groups.set(list, res);
+    return res;
+  }
+  return {
+    prepare,
+    uniques: (list) => (groups.get(list) || { uniques: list }).uniques,
+    repOf: (list, key) => ((groups.get(list) || {}).rep || new Map()).get(key) || key,
+    info: (list) => groups.get(list),
+    _ncc: ncc, _sig: (e) => sigMem.get(e.key),
+  };
+})();
+$('simThr').addEventListener('input', () => { $('simVal').textContent = +$('simThr').value <= 7 ? 'почти одинаковые' : +$('simThr').value >= 16 ? 'просто похожие' : 'средне'; });
+$('simThr').dispatchEvent(new Event('input'));
+
 // Плейлист, начинающийся с выбранного файла (переход с карты): дальше — в текущем режиме
 function buildFrom(all, mode, n, startKey) {
   const i = Math.max(0, all.findIndex(e => e.key === startKey));
   if (mode === 'random') { const rest = all.slice(); const [first] = rest.splice(i, 1); return [first, ...shuffle(rest)]; }
   if (mode === 'nth') return strideOrder(all, n, i);
+  if (mode === 'smart') { const u = Similar.uniques(all), rk = Similar.repOf(all, startKey); return strideOrder(u, n, Math.max(0, u.findIndex(e => e.key === rk))); }
   return all;            // по порядку: весь список, старт с индекса i (см. startIndex)
 }
 /* ============================ индекс метаданных ============================ */
@@ -1056,7 +1186,8 @@ async function ensureMeta(list, onProgress) {
         let v = await DB.get('meta', ck).catch(() => null);
         if (v) fromCache++;
         else {
-          v = metaFrom(await metaParse(f, META_OPTS).catch(() => null));
+          if (isVideo(e)) { const x = await mp4meta(f).catch(() => null); v = metaFrom(x); if (x && x.dur) v.dur = x.dur; }
+          else v = metaFrom(await metaParse(f, META_OPTS).catch(() => null));
           pending.push([ck, v]);
           if (pending.length >= 200) await DB.putMany('meta', pending.splice(0)).catch(() => {});
         }
@@ -1073,24 +1204,31 @@ async function ensureMeta(list, onProgress) {
 }
 async function readGps(entry, file) {
   if (gpsMem.has(entry.key)) return gpsMem.get(entry.key);
-  const v = metaFrom(await metaParse(file || await entry.getFile(), META_OPTS).catch(() => null));
+  if (entry.cloud) { remember(entry, entry.cloud.meta); return gpsMem.get(entry.key); }
+  const f = file || await entry.getFile();
+  let v;
+  if (isVideo(entry)) { const x = await mp4meta(f).catch(() => null); v = metaFrom(x); if (x && x.dur) v.dur = x.dur; }
+  else v = metaFrom(await metaParse(f, META_OPTS).catch(() => null));
   remember(entry, v);
   return gpsMem.get(entry.key);
 }
 
 /* ============================ фильтр (формат, камера) ============================ */
-const fmtOf = (name) => RAW_RE.test(name) ? 'raw' : /\.jpe?g$/i.test(name) ? 'jpg' : /\.hei[cf]$/i.test(name) ? 'heic' : 'other';
+const fmtOf = (name) => VIDEO_RE.test(name) ? 'video' : RAW_RE.test(name) ? 'raw' : /\.jpe?g$/i.test(name) ? 'jpg' : /\.hei[cf]$/i.test(name) ? 'heic' : 'other';
+const FMT_DEFAULT = { photo: true, video: false, jpg: true, raw: true, heic: true, other: true };
 const flt = (() => {
   const v = load('filter', null) || {};
-  return { fmt: Object.assign({ jpg: true, raw: true, heic: true, other: true }, v.fmt || {}),
+  return { fmt: Object.assign({}, FMT_DEFAULT, v.fmt || {}),
            offModels: new Set(v.offModels || []), known: v.known || [] };      // known — камеры, встречавшиеся раньше
 })();
 const NO_CAM = '';                    // фото без сведений о камере
 const camLabel = (m) => m || 'нет данных о камере';
 function saveFilter() { store('filter', { fmt: flt.fmt, offModels: [...flt.offModels], known: flt.known }); }
-const filterActive = () => Object.values(flt.fmt).some(x => !x) || flt.offModels.size > 0;
+// «включён» — если что-то отличается от умолчания (видео по умолчанию выключено — это не «фильтр»)
+const filterActive = () => Object.keys(FMT_DEFAULT).some(k => flt.fmt[k] !== FMT_DEFAULT[k]) || flt.offModels.size > 0;
+const passFmt = (name) => { const f = fmtOf(name); return f === 'video' ? flt.fmt.video : flt.fmt.photo && flt.fmt[f] !== false; };
 async function applyFilter(list) {
-  let out = list.filter(e => flt.fmt[fmtOf(e.name)] !== false);
+  let out = list.filter(e => passFmt(e.name));
   if (flt.offModels.size) {
     await ensureMeta(out, (d, n) => status(`Чтение EXIF для фильтра по камерам: ${d} / ${n}`));
     out = out.filter(e => !flt.offModels.has((metaMem.get(e.key) || {}).model || NO_CAM));
@@ -1133,8 +1271,8 @@ document.querySelectorAll('#fmtChips input').forEach(i => {
 $('camAll').onclick = () => { flt.offModels.clear(); renderCams(); filterChanged(); };
 $('camNone').onclick = () => { for (const m of flt.known) flt.offModels.add(m); renderCams(); filterChanged(); };
 $('fltReset').onclick = () => {
-  for (const k in flt.fmt) flt.fmt[k] = true; flt.offModels.clear();
-  document.querySelectorAll('#fmtChips input').forEach(i => i.checked = true);
+  Object.assign(flt.fmt, FMT_DEFAULT); flt.offModels.clear();
+  document.querySelectorAll('#fmtChips input').forEach(i => i.checked = flt.fmt[i.dataset.fmt]);
   renderCams(); filterChanged();
 };
 $('camRefresh').onclick = async () => {
@@ -1145,6 +1283,86 @@ $('camRefresh').onclick = async () => {
     status(`Камер: ${new Set([...metaMem.values()].map(v => v.model)).size} · фото: ${all.length} (прочитано ${r.read}, из кэша ${r.fromCache + r.cached})`);
   } finally { progress(null); $('camRefresh').disabled = false; renderCams(); }
 };
+
+/* ============================ видео: метаданные MP4/MOV и кадр для миниатюры ============================ */
+// Читаем только атом moov (он маленький), даже если он в конце файла. Дата: Apple creationdate (местное время)
+// или mvhd (UTC → местное время браузера). Координаты: udta/©xyz (Android) или com.apple.quicktime.location.ISO6709.
+async function mp4meta(file) {
+  const rd = async (o, n) => new DataView(await file.slice(o, o + n).arrayBuffer());
+  const str = (dv, o, n) => { let t = ''; for (let i = 0; i < n && o + i < dv.byteLength; i++) t += String.fromCharCode(dv.getUint8(o + i)); return t; };
+  let off = 0, moov = null;
+  for (let i = 0; i < 100 && off + 8 <= file.size; i++) {
+    const h = await rd(off, 16); let len = h.getUint32(0); const type = str(h, 4, 4);
+    if (len === 1) len = Number(h.getBigUint64(8)); else if (len === 0) len = file.size - off;
+    if (type === 'moov') { if (len < 64e6) moov = await rd(off, len); break; }
+    if (len < 8) break; off += len;
+  }
+  if (!moov) return null;
+  const out = {}, keys = [];
+  const utf8 = (dv, o, n) => new TextDecoder().decode(new Uint8Array(dv.buffer, dv.byteOffset + o, Math.max(0, Math.min(n, dv.byteLength - o))));
+  const iso6709 = (t) => { const m = /([+-]\d+(?:\.\d+)?)([+-]\d+(?:\.\d+)?)/.exec(t || ''); return m ? { lat: +m[1], lon: +m[2] } : null; };
+  function walk(o, end, depth) {
+    while (o + 8 <= end) {
+      let len = moov.getUint32(o); const type = str(moov, o + 4, 4); let hdr = 8;
+      if (len === 1) { len = Number(moov.getBigUint64(o + 8)); hdr = 16; } else if (len === 0) len = end - o;
+      if (len < 8 || o + len > end) break;
+      const b = o + hdr, e = o + len;
+      if (type === 'mvhd') {
+        const v = moov.getUint8(b), ct = v === 1 ? Number(moov.getBigUint64(b + 4)) : moov.getUint32(b + 4);
+        const ts = v === 1 ? moov.getUint32(b + 20) : moov.getUint32(b + 12), du = v === 1 ? Number(moov.getBigUint64(b + 24)) : moov.getUint32(b + 16);
+        if (ct > 0) out.mvhdTime = new Date((ct - 2082844800) * 1000);
+        if (ts) out.dur = du / ts;
+      } else if (type === '\u00a9xyz') {
+        const n = moov.getUint16(b); out.loc = out.loc || iso6709(utf8(moov, b + 4, n));
+      } else if (type === 'loci' && b + 8 < e) {       // 3GPP: версия/флаги, язык, имя\0, роль, долгота, широта (16.16)
+        let q = b + 6; while (q < e && moov.getUint8(q) !== 0) q++; q += 2;
+        if (q + 8 <= e) { const lon = moov.getInt32(q) / 65536, lat = moov.getInt32(q + 4) / 65536; if (lat || lon) out.loc = out.loc || { lat, lon }; }
+      } else if (type === 'keys') {
+        const n = moov.getUint32(b + 4); let q = b + 8;
+        for (let k = 0; k < n && q + 8 <= e; k++) { const kl = moov.getUint32(q); keys.push(utf8(moov, q + 8, kl - 8)); q += kl; }
+      } else if (type === 'ilst') {
+        let q = b;
+        while (q + 8 <= e) {
+          const il = moov.getUint32(q), idx = moov.getUint32(q + 4), name = keys[idx - 1] || '';
+          if (il < 8) break;
+          if (q + 16 <= e && str(moov, q + 12, 4) === 'data') {
+            const dl = moov.getUint32(q + 8), val = utf8(moov, q + 24, dl - 16);
+            if (/location\.ISO6709$/.test(name)) out.loc = iso6709(val) || out.loc;
+            else if (/creationdate$/.test(name)) out.created = val;
+            else if (/\.model$/.test(name)) out.model = val;
+            else if (/\.make$/.test(name)) out.make = val;
+          }
+          q += il;
+        }
+      } else if (type === 'meta') {
+        // в MP4 у meta есть 4 байта версии/флагов, в QuickTime — нет
+        walk(moov.getUint32(b) === 0 ? b + 4 : b, e, depth + 1);
+      } else if (['moov', 'udta', 'trak', 'mdia'].includes(type) && depth < 6) walk(b, e, depth + 1);
+      o = e;
+    }
+  }
+  walk(0, moov.byteLength, 0);
+  const pad = (n) => String(n).padStart(2, '0');
+  let date = '';
+  const m = /^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)/.exec(out.created || '');
+  if (m) date = `${m[1]}:${m[2]}:${m[3]} ${m[4]}:${m[5]}:${m[6]}`;
+  else if (out.mvhdTime && out.mvhdTime.getFullYear() > 1971) { const d = out.mvhdTime; date = `${d.getFullYear()}:${pad(d.getMonth() + 1)}:${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
+  return { DateTimeOriginal: date, Make: out.make, Model: out.model, latitude: out.loc && out.loc.lat, longitude: out.loc && out.loc.lon, dur: out.dur };
+}
+// Кадр из видео (≈10% длительности, не дальше 1 с) → objectURL миниатюры
+async function videoFrame(src, size) {
+  const v = document.createElement('video'); v.muted = true; v.playsInline = true; v.preload = 'auto'; v.src = src;
+  try {
+    await new Promise((res, rej) => { v.onloadeddata = res; v.onerror = () => rej(new Error('видео не открылось — возможно, браузер не знает этот кодек (HEVC/H.265?)')); setTimeout(() => rej(new Error('видео: таймаут')), 20000); });
+    v.currentTime = Math.min(1, (v.duration || 2) * 0.1);
+    await new Promise(r => { v.onseeked = r; setTimeout(r, 4000); });
+    const k = size / Math.max(v.videoWidth, v.videoHeight), c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(v.videoWidth * k)); c.height = Math.max(1, Math.round(v.videoHeight * k));
+    c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+    return await new Promise(r => c.toBlob(b => r(URL.createObjectURL(b)), 'image/jpeg', 0.8));
+  } finally { v.removeAttribute('src'); v.load(); }
+}
+const fmtDur = (s) => s ? `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}` : '';
 
 /* ============================ RAW ============================ */
 // Браузеры не декодируют RAW, но почти в каждом RAW лежит JPEG-превью от камеры (часто полноразмерное).
@@ -1300,6 +1518,11 @@ const Thumbs = (() => {
     }
   }
   async function makeThumb(entry, big) {
+    if (isVideo(entry) && !(entry.cloud && entry.cloud.preview)) {     // кадр из видео
+      if (entry.cloud) return null;
+      const f = await entry.getFile(), u = URL.createObjectURL(f);
+      try { return await videoFrame(u, big ? 360 : 160); } finally { URL.revokeObjectURL(u); }
+    }
     if (entry.cloud && entry.cloud.preview) {
       try { return canvasUrl(await createImageBitmap(await YA.preview(entry.cloud.preview)), big ? 360 : 160, 1); }
       catch (e) { console.warn('превью Диска:', e.message); }     // не вышло — пробуем из оригинала
@@ -1540,15 +1763,20 @@ const Gallery = (() => {
     }, { root: grid, rootMargin: '400px 0px' });
     grid.querySelectorAll('.tile').forEach(t => io.observe(t));
   }
-  function open(entries, title) {
+  let full = [], title0 = '', favOnly = false;
+  function open(entries, title, keepFav) {
+    if (!keepFav) { full = entries; title0 = title; favOnly = false; }
+    $('gFavOnly').classList.toggle('on', favOnly); $('gFavOnly').textContent = favOnly ? '★ только избранное' : '☆ только избранное';
     list = entries; big = sz() > 170;
-    $('gTitle').textContent = title; $('gCount').textContent = `${entries.length} фото`;
+    const nv = entries.filter(isVideo).length;
+    $('gTitle').textContent = title; $('gCount').textContent = `${entries.length - nv} фото${nv ? ` · ${nv} видео` : ''}`;
     inner.innerHTML = '';
     const frag = document.createDocumentFragment();
     entries.forEach((e, i) => {
       const t = document.createElement('div'); t.className = 'tile'; t.dataset.i = i; t.title = e.path;
       const g = gpsMem.get(e.key);
-      t.innerHTML = `<img alt=""><span class="nm">${esc(e.name)}</span><button class="fav${Fav.has(e) ? ' on' : ''}" title="Избранное (L)">${Fav.has(e) ? '★' : '☆'}</button>` +
+      const vd = isVideo(e) ? `<span class="vb">▶ ${fmtDur((metaMem.get(e.key) || {}).dur)}</span>` : '';
+      t.innerHTML = `<img alt="">${vd}<span class="nm">${esc(e.name)}</span><button class="fav${Fav.has(e) ? ' on' : ''}" title="Избранное (L)">${Fav.has(e) ? '★' : '☆'}</button>` +
         (g ? '<button class="geo" title="Показать на карте">📍</button>' : '');
       frag.appendChild(t);
     });
@@ -1565,12 +1793,19 @@ const Gallery = (() => {
     // просмотр: с этой фотографии, листать соседние по всем папкам; Esc вернёт в галерею
     Show.view(e);
   });
-  $('gPlay').onclick = () => {
+  $('gPlay').onclick = async () => {
     const all = list, { mode, n } = modeOpts(), rebuild = () => buildPlaylist(all, mode, n);
+    await preparePlaylist(all, mode, (t) => status(t));
     lastShowAll = all;
     Show.start({ list: rebuild(), rebuild: mode === 'order' ? null : rebuild, ...showOptions() });
   };
   $('gClose').onclick = close;
+  $('gFavOnly').onclick = () => {
+    favOnly = !favOnly;
+    const l = favOnly ? full.filter(e => Fav.has(e)) : full;
+    if (favOnly && !l.length) { favOnly = false; status('В этом наборе нет избранных фото'); return; }
+    open(l, favOnly ? `${title0} · ★` : title0, true);
+  };
   $('gSize').addEventListener('input', () => grid.style.setProperty('--gs', sz() + 'px'));
   $('gSize').addEventListener('change', () => {           // перешли порог — перезагружаем миниатюры нужного размера
     store('gsize', sz());
@@ -1584,7 +1819,8 @@ const Gallery = (() => {
 
 /* ============================ слайд-шоу ============================ */
 const Show = (() => {
-  const el = $('show'), imgs = [$('imgA'), $('imgB')], cap = $('cap'), osd = $('osd'), bar = $('bar');
+  const el = $('show'), imgs = [$('imgA'), $('imgB')], cap = $('cap'), osd = $('osd'), bar = $('bar'), vid = $('vid');
+  function stopVideo() { if (vid.classList.contains('on') || vid.src) { vid.pause(); vid.removeAttribute('src'); vid.load(); vid.classList.remove('on'); vid.style.transform = ''; } }
   let list = [], idx = 0, cur = 0, timer = null, paused = false, open = false, token = 0;
   let rebuild = null, intervalMs = 5000, loop = true, showCap = true, errorsInRow = 0;
   let shown = null;                 // фото на экране: list[idx] или «отступление» по карте
@@ -1605,12 +1841,12 @@ const Show = (() => {
     const W = el.clientWidth, H = el.clientHeight, k = Math.min(W / dims.w, H / dims.h), dw = dims.w * k, dh = dims.h * k;
     return Math.min(W / dh, H / dw);
   }
-  function applyT(im = imgs[cur]) {
+  function applyT(im = curR && curR.video ? vid : imgs[cur]) {
     const deg = shown ? (rotMem.get(shown.key) || 0) : 0;
     // без масштаба и поворота — никакой трансформации: иначе браузер выносит картинку на отдельный GPU-слой,
     // а большие изображения там режутся на тайлы, и на стыках бывают тонкие полосы
     im.style.transform = (zs === 1 && zx === 0 && zy === 0 && !deg) ? '' : `translate(${zx}px, ${zy}px) scale(${zs * fitRot(deg)}) rotate(${deg}deg)`;
-    if (zs > 1.15 && curR && curR.orig && !curR.origUrl) { curR.origUrl = URL.createObjectURL(curR.orig); im.src = curR.origUrl; }   // при увеличении — оригинал
+    if (zs > 1.15 && curR && curR.orig && !curR.origUrl && im !== vid) { curR.origUrl = URL.createObjectURL(curR.orig); im.src = curR.origUrl; }   // при увеличении — оригинал
     el.classList.toggle('zoomed', zs > 1);
   }
   function zoomAt(cx, cy, ns) {      // cx, cy — от центра экрана; точка под курсором остаётся на месте
@@ -1630,6 +1866,12 @@ const Show = (() => {
     let p = cache.get(e.key);
     if (p) { cache.delete(e.key); cache.set(e.key, p); return p; }
     p = (async () => {
+      if (isVideo(e)) {                         // видео: не скачиваем в память — локально objectURL, на Диске прямая ссылка
+        try {
+          if (e.cloud) return { video: true, ok: true, url: await YA.downloadHref(e.cloud.path), file: null };
+          const file = await e.getFile(); return { video: true, ok: true, url: URL.createObjectURL(file), file };
+        } catch (err) { return { ok: false, err }; }
+      }
       let file = null, blob;
       try { file = await e.getFile(); blob = await displayBlob(file); }
       catch (err) {
@@ -1662,9 +1904,21 @@ const Show = (() => {
     try { r = await prep(e); } catch (err) { r = { ok: false, err }; }
     if (my !== token) return null;
     if (!r.ok) return r;
-    const next = imgs[cur ^ 1], prev = imgs[cur];
-    shown = e; dims = { w: r.w, h: r.h }; curR = r; resetZoom(); applyT(next);
-    next.src = r.url; next.classList.add('on'); prev.classList.remove('on'); cur ^= 1;
+    if (r.video) {
+      shown = e; curR = r; resetZoom(); dims = { w: 0, h: 0 };
+      imgs.forEach(im => im.classList.remove('on'));
+      vid.src = r.url; vid.classList.add('on'); vid.muted = false;
+      vid.onloadedmetadata = () => { dims = { w: vid.videoWidth, h: vid.videoHeight }; applyT(); };
+      vid.onended = () => { if (open && shown === e && !paused && auto && !viewMode) step(1); };   // автосмена — после ролика
+      vid.onerror = () => { if (shown !== e) return; flash('Видео не воспроизводится — браузер не знает этот кодек (HEVC/H.265?)');
+        if (open && !paused && auto && !viewMode) { clearTimeout(timer); timer = setTimeout(() => { if (shown === e) step(1); }, 2500); } };
+      vid.play().catch(() => { vid.muted = true; vid.play().catch(() => {}); });                  // без звука, если браузер не дал
+    } else {
+      stopVideo();
+      const next = imgs[cur ^ 1], prev = imgs[cur];
+      shown = e; dims = { w: r.w, h: r.h }; curR = r; resetZoom(); applyT(next);
+      next.src = r.url; next.classList.add('on'); prev.classList.remove('on'); cur ^= 1;
+    }
     cap.textContent = '';
     if (showCap) {
       cap.textContent = `${e.path}\n${note}`;
@@ -1780,7 +2034,7 @@ const Show = (() => {
 
   function schedule() {
     clearTimeout(timer);
-    if (paused || !open || viewMode || !auto || zs > 1) { bar.style.transition = 'none'; bar.style.width = '0'; return; }
+    if (paused || !open || viewMode || !auto || zs > 1 || (curR && curR.video)) { bar.style.transition = 'none'; bar.style.width = '0'; return; }   // видео — до конца ролика
     bar.style.transition = 'none'; bar.style.width = '0'; void bar.offsetWidth;
     bar.style.transition = `width ${intervalMs}ms linear`; bar.style.width = '100%';
     const my = token;
@@ -1808,14 +2062,19 @@ const Show = (() => {
     if (viewMode) { schedule(); return; }
     el.style.setProperty('--fade', o.fade ? '.6s' : '0s');
     if (o.caption !== showCap) { showCap = o.caption; cap.hidden = !showCap; }
-    if ((mode !== curMode || n !== curN) && base.length > 1) {
+    if ((mode !== curMode || n !== curN || (mode === 'smart' && (Similar.info(base) || {}).thr !== 0.97 - (+$('simThr').value - 4) * 0.01)) && base.length > 1) {
+      if (mode === 'smart' && (!Similar.info(base) || Similar.info(base).thr !== 0.97 - (+$('simThr').value - 4) * 0.01)) {   // серии ещё не посчитаны
+        curMode = ''; preparePlaylist(base, mode, (t) => flash(t)).then(() => { if (open) applySettings(); }); return;
+      }
       const e = shown || list[idx];
       curMode = mode; curN = n;
       list = buildFrom(base, mode, n, e.key);
       idx = mode === 'order' ? Math.max(0, base.findIndex(x => x.key === e.key)) : 0;
       rebuild = mode === 'order' ? null : () => buildPlaylist(base, mode, n);
       walk = null;
-      flash({ order: 'Порядок: подряд', random: 'Порядок: случайно', nth: `Порядок: шаг ≈ ${n}` }[mode]);
+      const g = mode === 'smart' && Similar.info(base);
+      flash(mode === 'smart' ? `Умный: ${g.uniques.length} уникальных из ${base.length}${n > 1 ? `, шаг ≈ ${n}` : ''}`
+        : { order: 'Порядок: подряд', random: 'Порядок: случайно', nth: `Порядок: шаг ≈ ${n}` }[mode]);
       const note = `${idx + 1} / ${list.length}`;
       if (showCap) cap.textContent = cap.textContent.replace(/\n.*$/, '\n' + note);
     }
@@ -1823,7 +2082,7 @@ const Show = (() => {
   }
   function close() {
     togglePanel(false);
-    open = false; token++; clearTimeout(timer); el.classList.remove('open');
+    open = false; token++; clearTimeout(timer); el.classList.remove('open'); stopVideo();
     dropCache(); walk = null; shown = null;
     imgs.forEach(im => { im.removeAttribute('src'); im.classList.remove('on'); im.style.transform = ''; });
     resetZoom();
@@ -1860,6 +2119,8 @@ const Show = (() => {
     if (!open) return;
     if (!all) { flash($('notice').textContent || 'Набор пуст'); return; }
     const { mode, n } = modeOpts(), inSet = all.some(x => x.key === e.key);
+    await preparePlaylist(all, mode, (t) => flash(t));
+    if (!open) return;
     base = all; lastShowAll = all; curScope = scope; curMode = mode; curN = n; curSort = JSON.stringify(sortOpts());
     list = inSet ? buildFrom(all, mode, n, e.key) : buildPlaylist(all, mode, n);
     const start = inSet && mode === 'order' ? all.findIndex(x => x.key === e.key) : 0;
@@ -1880,6 +2141,7 @@ const Show = (() => {
   }
   function togglePause() {
     paused = !paused; flash(paused ? 'Пауза' : '▶');
+    if (curR && curR.video) paused ? vid.pause() : vid.play().catch(() => {});
     if (paused) { clearTimeout(timer); bar.style.transition = 'none'; bar.style.width = '0'; } else schedule();
   }
   $('tools').addEventListener('click', (ev) => ev.stopPropagation());
@@ -1934,7 +2196,7 @@ const Show = (() => {
     ev.deltaY > 0 ? step(1) : step(-1);
   }, { passive: false });
   el.addEventListener('pointerdown', (ev) => {
-    if (ev.button !== 0 || ev.target.closest('#showPanel, #mini, #tools')) return;
+    if (ev.button !== 0 || ev.target.closest('#showPanel, #mini, #tools') || (ev.target === vid && zs === 1 && !ev.ctrlKey)) return;
     dragged = false;
     if (!(ev.ctrlKey || zs > 1)) return;
     drag = { x: ev.clientX, y: ev.clientY, zx, zy };
@@ -1948,6 +2210,7 @@ const Show = (() => {
   });
   el.addEventListener('pointerup', () => { drag = null; el.classList.remove('dragging'); });
   el.addEventListener('click', (ev) => {
+    if (ev.target === vid) return;                                   // кнопки плеера
     if (ev.ctrlKey || zs > 1 || dragged) { dragged = false; return; }   // щелчок при масштабе не листает
     ev.clientX < innerWidth / 3 ? step(-1) : step(1);
   });
@@ -1958,7 +2221,7 @@ const Show = (() => {
 })();
 
 function modeOpts() {
-  return { mode: document.querySelector('input[name=mode]:checked').value, n: Math.max(2, parseInt($('nth').value) || 5) };
+  return { mode: document.querySelector('input[name=mode]:checked').value, n: Math.max(1, parseInt($('nth').value) || 5) };
 }
 function showOptions() {
   return {
@@ -1990,9 +2253,11 @@ async function startShow(scope) {
   const all = await scopeEntries(scope); if (!all) return;
   lastShowAll = all;
   const { mode, n } = modeOpts();
+  await preparePlaylist(all, mode, (t) => status(t));
+  if (mode === 'smart') { const g = Similar.info(all); status(`Уникальных кадров: ${g.uniques.length} из ${all.length} (серий похожих: ${g.series})`); }
   const rebuild = () => buildPlaylist(all, mode, n);
   const list = rebuild();
-  status(`Файлов найдено: ${all.length}, в показе: ${list.length}`);
+  if (mode !== 'smart') status(`Файлов найдено: ${all.length}, в показе: ${list.length}`);
   Show.start({ list, rebuild: mode === 'order' ? null : rebuild, ...showOptions() });
 }
 $('start').onclick = () => startShow(document.querySelector('input[name=scope]:checked').value);
@@ -2116,7 +2381,7 @@ const MapView = (() => {
         el.title = `${n} фото — щёлкните, чтобы приблизить`;
       } else {
         el.className = 'ph'; el.style.width = el.style.height = size + 'px';
-        el.innerHTML = '<img alt="">'; el.title = points[pr.i].entry.path;
+        el.innerHTML = '<img alt="">' + (isVideo(points[pr.i].entry) ? '<span class="vb">▶</span>' : ''); el.title = points[pr.i].entry.path;
         fillThumb(el, pr.i);
       }
       el.style.zIndex = Math.round((90 - lat) * 1000);       // южнее — выше (как в Leaflet), без хаотичного перекрытия
@@ -2164,10 +2429,11 @@ const MapView = (() => {
     popup.on('close', () => { if (url) URL.revokeObjectURL(url); });
   }
   // Если фото есть в наборе прерванного слайд-шоу — продолжаем его, иначе берём набор карты
-  function startFrom(i, paused) {
+  async function startFrom(i, paused) {
     const key = points[i].entry.key;
     const all = lastShowAll.some(e => e.key === key) ? lastShowAll : mapAll.length ? mapAll : points.map(p => p.entry);
     const { mode, n } = modeOpts();
+    if (!paused) await preparePlaylist(all, mode, (t) => status(t));
     const list = paused ? [points[i].entry] : buildFrom(all, mode, n, key);
     const startAt = !paused && mode === 'order' ? Math.max(0, all.findIndex(e => e.key === key)) : 0;
     Show.start({ list, startAt, paused, base: all, rebuild: paused ? null : () => buildPlaylist(all, mode, n), ...showOptions(), loop: paused ? false : $('loop').checked });
@@ -2226,7 +2492,7 @@ $('clearCache').onclick = async () => { await DB.clear('meta').catch(() => {}); 
 function saveSettings() {
   store('settings', {
     scope: document.querySelector('input[name=scope]:checked').value, mode: document.querySelector('input[name=mode]:checked').value,
-    auto: $('auto').checked, placeOn: $('placeOn').checked, sortBy: sortOpts().by, sortDir: sortOpts().dir, density: $('density').value, thumbSize: $('thumbSize').value, coverZoom: $('coverZoom').value, rawSkip: $('rawSkip').checked,
+    simThr: $('simThr').value, auto: $('auto').checked, placeOn: $('placeOn').checked, sortBy: sortOpts().by, sortDir: sortOpts().dir, density: $('density').value, thumbSize: $('thumbSize').value, coverZoom: $('coverZoom').value, rawSkip: $('rawSkip').checked,
     nth: $('nth').value, interval: $('interval').value, caption: $('caption').checked, fade: $('fade').checked, loop: $('loop').checked,
   });
 }
@@ -2237,6 +2503,7 @@ function saveSettings() {
   if (s.density) $('density').value = s.density;
   if (s.coverZoom) $('coverZoom').value = s.coverZoom;
   $('auto').checked = s.auto !== false;
+  if (s.simThr) { $('simThr').value = s.simThr; $('simThr').dispatchEvent(new Event('input')); }
   $('placeOn').checked = !!s.placeOn;
   for (const [n, v] of [['sortBy', s.sortBy], ['sortDir', s.sortDir]]) { const r = v && document.querySelector(`input[name=${n}][value="${v}"]`); if (r) r.checked = true; } if (s.thumbSize) $('thumbSize').value = s.thumbSize;
   const r = document.querySelector(`input[name=mode][value="${s.mode}"]`); if (r) r.checked = true;
