@@ -151,7 +151,7 @@
 </head>
 <body>
 <aside>
-  <h1>PhotoShow</h1>
+  <h1>PhotoShow <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-21.4</span></h1>
   <div class="hint">Слайд-шоу по папкам и карта фото с геометками. Файлы не покидают ваш компьютер.</div>
 
   <h2>Папки</h2>
@@ -192,7 +192,7 @@
     <button id="galleryBtn" class="grow" title="Плитка миниатюр того же набора">▦ Галерея</button>
   </div>
   <div class="keys" style="margin-top:8px">
-    <kbd>←</kbd>/<kbd>→</kbd> назад/вперёд · <kbd>Пробел</kbd> пауза · <kbd>+</kbd>/<kbd>−</kbd> интервал ·
+    <kbd>↑</kbd>/<kbd>↓</kbd> назад/вперёд по порядку показа · <kbd>←</kbd>/<kbd>→</kbd> соседние фото на карте · <kbd>Пробел</kbd> пауза · <kbd>+</kbd>/<kbd>−</kbd> интервал ·
     <kbd>I</kbd> подпись · <kbd>G</kbd> мини-карта · <kbd>M</kbd> прервать и перейти к карте · <kbd>F</kbd> полный экран · <kbd>Esc</kbd> выход (из просмотра из галереи — обратно в галерею)
   </div>
 
@@ -885,80 +885,148 @@ const Show = (() => {
   const el = $('show'), imgs = [$('imgA'), $('imgB')], cap = $('cap'), osd = $('osd'), bar = $('bar');
   let list = [], idx = 0, cur = 0, timer = null, paused = false, open = false, token = 0;
   let rebuild = null, intervalMs = 5000, loop = true, showCap = true, errorsInRow = 0;
-  const cache = new Map();   // idx -> Promise<{url, file}>
+  let shown = null;                 // фото на экране: list[idx] или «отступление» по карте
+  // Прогулка по карте (←/→): путь из показанных фото и множество уже посещённых
+  let walk = null;                  // { path: [entry], seen: Set<key> }
+  const cache = new Map();          // entry.key -> Promise<{url, file, ok}>; небольшой LRU
   let osdTimer, cursorTimer;
 
-  function prep(i) {
-    if (!cache.has(i)) {
-      const e = list[i];
-      const p = (async () => {
-        const file = await e.getFile();
-        const url = URL.createObjectURL(await displayBlob(file));
-        const im = new Image(); im.src = url;
-        try { await im.decode(); return { url, file, ok: true }; }
-        catch (err) { return { url, file, ok: false }; }
-      })();
-      cache.set(i, p);
-    }
-    return cache.get(i);
+  function prep(e) {
+    let p = cache.get(e.key);
+    if (p) { cache.delete(e.key); cache.set(e.key, p); return p; }
+    p = (async () => {
+      const file = await e.getFile();
+      const url = URL.createObjectURL(await displayBlob(file));
+      const im = new Image(); im.src = url;
+      try { await im.decode(); return { url, file, ok: true }; }
+      catch (err) { return { url, file, ok: false }; }
+    })();
+    cache.set(e.key, p);
+    while (cache.size > 8) { const k = cache.keys().next().value; const old = cache.get(k); cache.delete(k); old.then(r => URL.revokeObjectURL(r.url)).catch(() => {}); }
+    return p;
   }
-  function trim() {
-    for (const [i, p] of cache) if (Math.abs(i - idx) > 3) { p.then(r => URL.revokeObjectURL(r.url)).catch(() => {}); cache.delete(i); }
-  }
-  function flash(t) { osd.textContent = t; osd.classList.add('on'); clearTimeout(osdTimer); osdTimer = setTimeout(() => osd.classList.remove('on'), 1200); }
+  function dropCache() { for (const p of cache.values()) p.then(r => URL.revokeObjectURL(r.url)).catch(() => {}); cache.clear(); }
+  function flash(t) { osd.textContent = t; osd.classList.add('on'); clearTimeout(osdTimer); osdTimer = setTimeout(() => osd.classList.remove('on'), 1400); }
 
+  // Общая отрисовка кадра. note — вторая строка подписи
+  async function render(e, note, my) {
+    let r;
+    try { r = await prep(e); } catch (err) { r = { ok: false, err }; }
+    if (my !== token) return null;
+    if (!r.ok) return r;
+    const next = imgs[cur ^ 1], prev = imgs[cur];
+    next.src = r.url; next.classList.add('on'); prev.classList.remove('on'); cur ^= 1;
+    shown = e;
+    cap.textContent = '';
+    if (showCap) {
+      cap.textContent = `${e.path}\n${note}`;
+      metaParse(r.file, { pick: ['DateTimeOriginal'], reviveValues: false }).then(x => {
+        if (my === token && x && x.DateTimeOriginal) cap.textContent = `${e.path}  ·  ${fmtExifDate(x.DateTimeOriginal)}\n${note}`;
+      }).catch(() => {});
+    }
+    Mini.update(e, r.file);
+    return r;
+  }
+
+  // ↑/↓ и автопоказ: позиция i в плейлисте
   async function display(i) {
     const my = ++token; clearTimeout(timer); bar.style.transition = 'none'; bar.style.width = '0';
+    walk = null;
     if (i >= list.length) {
       if (!loop) { flash('Конец'); paused = true; idx = list.length - 1; return; }
-      if (rebuild) { list = rebuild(); for (const p of cache.values()) p.then(r => URL.revokeObjectURL(r.url)); cache.clear(); }
+      if (rebuild) { list = rebuild(); dropCache(); }
       i = 0;
     }
     if (i < 0) i = list.length - 1;
     idx = i;
-    let r;
-    try { r = await prep(i); } catch (e) { r = { ok: false, err: e }; }
-    if (my !== token) return;
+    const r = await render(list[i], `${i + 1} / ${list.length}`, my);
+    if (!r) return;
     if (!r.ok) {                    // например HEIC в Chrome или битый файл — пропускаем
       console.warn('Не удалось показать', list[i].path, r.err || '');
       if (++errorsInRow > 50) { flash('Слишком много нечитаемых файлов подряд'); return; }
       return display(i + 1);
     }
     errorsInRow = 0;
-    const next = imgs[cur ^ 1], prev = imgs[cur];
-    next.src = r.url; next.classList.add('on'); prev.classList.remove('on'); cur ^= 1;
-    const e = list[i];
-    cap.textContent = '';
-    if (showCap) {
-      cap.textContent = `${e.path}\n${i + 1} / ${list.length}`;
-      metaParse(r.file, { pick: ['DateTimeOriginal'], reviveValues: false }).then(x => {
-        if (my === token && x && x.DateTimeOriginal) cap.textContent = `${e.path}  ·  ${fmtExifDate(x.DateTimeOriginal)}\n${i + 1} / ${list.length}`;
-      }).catch(() => {});
-    }
-    Mini.update(e, r.file);
     const ps = list.passStarts && list.passStarts.get(i);
     if (ps && ps.pass > 1) flash(`Проход ${ps.pass}: осталось ${ps.left} непоказанных`);
-    // предзагрузка соседей
-    if (i + 1 < list.length) prep(i + 1); if (i > 0) prep(i - 1); trim();
+    if (i + 1 < list.length) prep(list[i + 1]); if (i > 0) prep(list[i - 1]);   // предзагрузка соседей
     schedule();
   }
+  // Шаг по порядку показа. После прогулки по карте — от текущего фото, если оно есть в наборе
+  function step(d) {
+    if (shown && list[idx] !== shown) {
+      const j = list.findIndex(x => x.key === shown.key);
+      if (j >= 0) idx = j;
+    }
+    display(idx + d);
+  }
+
+  /* ---------- ←/→: соседние фото на карте ---------- */
+  const km = (a, b) => {               // равнопромежуточное приближение — для «кто ближе» достаточно
+    const x = (b.lon - a.lon) * Math.cos((a.lat + b.lat) * Math.PI / 360), y = b.lat - a.lat;
+    return Math.sqrt(x * x + y * y) * 111.32;
+  };
+  const fmtKm = (d) => d < 0.01 ? 'та же точка' : d < 1 ? `${Math.round(d * 1000)} м` : `${d < 10 ? d.toFixed(1) : Math.round(d)} км`;
+  function where(e) { const p = MapView.points.find(q => q.entry.key === e.key); return p ? { lat: p.lat, lon: p.lon } : null; }
+  function nearestUnseen(from, seen) {
+    let best = null, bd = Infinity;
+    for (const q of MapView.points) {
+      if (seen.has(q.entry.key)) continue;
+      const d = km(from, q); if (d < bd) { bd = d; best = q; }
+    }
+    return best ? { entry: best.entry, d: bd } : null;
+  }
+  async function spatial(dir) {
+    const e = shown || list[idx]; if (!e) return;
+    if (!MapView.points.length) {
+      flash('Ищу фото с геометками…');
+      await scanGps({ fit: false });
+      if (!MapView.points.length) { flash('Нет фото с геометками в отмеченных папках'); return; }
+    }
+    let here = where(e);
+    if (!here) { const g = await readGps(e); here = g && { lat: g.lat, lon: g.lon }; }
+    if (!here) { flash('У этого фото нет геометки — соседей на карте не найти'); return; }
+    if (!walk || walk.path[walk.path.length - 1] !== e) walk = { path: [e], seen: new Set([e.key]) };
+    let target, note;
+    if (dir > 0) {
+      const n = nearestUnseen(here, walk.seen);
+      if (!n) { flash('Все фото на карте уже пройдены'); return; }
+      walk.path.push(n.entry); walk.seen.add(n.entry.key);
+      target = n.entry; note = `🗺 рядом: ${fmtKm(n.d)} · шаг ${walk.path.length - 1} по карте`;
+    } else {
+      if (walk.path.length < 2) { flash('Это начало пути по карте (→ — к ближайшему фото)'); return; }
+      walk.path.pop(); target = walk.path[walk.path.length - 1];
+      note = walk.path.length > 1 ? `🗺 назад · шаг ${walk.path.length - 1} по карте` : '🗺 начало пути по карте';
+    }
+    const inList = list.findIndex(x => x.key === target.key);
+    if (inList >= 0) note += ` · ${inList + 1} / ${list.length}`;
+    const my = ++token; clearTimeout(timer); bar.style.transition = 'none'; bar.style.width = '0';
+    const w = walk;
+    const r = await render(target, note, my);
+    walk = w;                                  // render не сбрасывает путь, но display — сбрасывает; восстанавливаем на всякий случай
+    if (!r) return;
+    if (!r.ok) { flash('Не удалось показать ' + target.name); return; }
+    const t = where(target); if (t) { const n = nearestUnseen(t, walk.seen); if (n) prep(n.entry); }   // предзагрузка следующего соседа
+    schedule();
+  }
+
   function schedule() {
     clearTimeout(timer);
     if (paused || !open) return;
     bar.style.transition = 'none'; bar.style.width = '0'; void bar.offsetWidth;
     bar.style.transition = `width ${intervalMs}ms linear`; bar.style.width = '100%';
     const my = token;
-    timer = setTimeout(() => { if (my === token) display(idx + 1); }, intervalMs);
+    timer = setTimeout(() => { if (my === token) step(1); }, intervalMs);
   }
   function close() {
     open = false; token++; clearTimeout(timer); el.classList.remove('open');
-    for (const p of cache.values()) p.then(r => URL.revokeObjectURL(r.url)).catch(() => {});
-    cache.clear(); imgs.forEach(im => { im.removeAttribute('src'); im.classList.remove('on'); });
+    dropCache(); walk = null; shown = null;
+    imgs.forEach(im => { im.removeAttribute('src'); im.classList.remove('on'); });
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   }
   async function start(opts) {
     list = opts.list; rebuild = opts.rebuild || null; intervalMs = opts.interval * 1000; loop = opts.loop;
-    showCap = opts.caption; paused = !!opts.paused; errorsInRow = 0;
+    showCap = opts.caption; paused = !!opts.paused; errorsInRow = 0; walk = null; shown = null;
     el.style.setProperty('--fade', opts.fade ? '.6s' : '0s');
     el.classList.add('open'); open = true; Mini.sync();
     try { await el.requestFullscreen(); } catch (e) {}
@@ -967,7 +1035,7 @@ const Show = (() => {
   }
   // Прервать показ и перейти к большой карте на текущем фото
   async function toMap() {
-    const e = list[idx]; if (!e) return;
+    const e = shown || list[idx]; if (!e) return;
     const g = await readGps(e);
     close(); Gallery.close();
     if (!MapView.points.length) await scanGps();   // карта ещё не построена
@@ -988,22 +1056,25 @@ const Show = (() => {
   document.addEventListener('keydown', (ev) => {
     if (!open) return;
     const k = ev.key;
-    if (k === 'ArrowRight' || k === 'PageDown') display(idx + 1);
-    else if (k === 'ArrowLeft' || k === 'PageUp') display(idx - 1);
+    if (k === 'ArrowDown' || k === 'PageDown') step(1);
+    else if (k === 'ArrowUp' || k === 'PageUp') step(-1);
+    else if (k === 'ArrowRight') spatial(1);
+    else if (k === 'ArrowLeft') spatial(-1);
     else if (k === ' ') togglePause();
     else if (k === 'Escape') close();
     else if (k === 'Home') display(0);
     else if (k === '+' || k === '=') { intervalMs = Math.min(3600e3, intervalMs + 1000); flash(`Интервал ${intervalMs / 1000} с`); schedule(); }
     else if (k === '-' || k === '_') { intervalMs = Math.max(1000, intervalMs - 1000); flash(`Интервал ${intervalMs / 1000} с`); schedule(); }
-    else if (k === 'i' || k === 'I' || k === 'ш' || k === 'Ш') { showCap = !showCap; cap.hidden = !showCap; if (showCap) display(idx); }
+    else if (k === 'i' || k === 'I' || k === 'ш' || k === 'Ш') { showCap = !showCap; cap.hidden = !showCap; }
     else if (k === 'm' || k === 'M' || k === 'ь' || k === 'Ь') toMap();
     else if (k === 'g' || k === 'G' || k === 'п' || k === 'П') Mini.toggle();
     else if (k === 'f' || k === 'F' || k === 'а' || k === 'А') { document.fullscreenElement ? document.exitFullscreen() : el.requestFullscreen().catch(() => {}); }
     else return;
     ev.preventDefault();
   });
-  el.addEventListener('click', (ev) => { ev.clientX < innerWidth / 3 ? display(idx - 1) : display(idx + 1); });
-  el.addEventListener('wheel', (ev) => { ev.deltaY > 0 ? display(idx + 1) : display(idx - 1); }, { passive: true });
+  // мышь: клик/колесо — по порядку показа (как ↑/↓)
+  el.addEventListener('click', (ev) => { ev.clientX < innerWidth / 3 ? step(-1) : step(1); });
+  el.addEventListener('wheel', (ev) => { ev.deltaY > 0 ? step(1) : step(-1); }, { passive: true });
   el.addEventListener('mousemove', () => { el.classList.add('cursor'); clearTimeout(cursorTimer); cursorTimer = setTimeout(() => el.classList.remove('cursor'), 1500); });
   return { start, close, get open() { return open; } };
 })();
