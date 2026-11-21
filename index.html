@@ -59,6 +59,8 @@
   #playOpts:not(:has(input[name=scope][value=selected]:checked)) .sel-l { display: none; }
   #playOpts:not(:has(#auto:checked)) .chip:has(#interval) { opacity: .45; }
   .sel-l { margin-top: 4px; }
+  #camList .chip .n { color: var(--muted); font-size: 11px; }
+  #camList { max-height: 160px; overflow-y: auto; }
   main { position: relative; min-width: 0; z-index: 0; }
   #map { isolation: isolate; }   /* маркеры с z-index не должны вылезать поверх галереи и показа */
   #map { position: absolute; inset: 0; }
@@ -109,7 +111,9 @@
   #show.open { display: block; }
   #show.cursor { cursor: default; }
   #show img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0;
-              transition: opacity var(--fade, .6s) ease; }
+              transition: opacity var(--fade, .6s) ease; transform-origin: 50% 50%; will-change: transform; }
+  #show.zoomed, #show.zoomed.cursor { cursor: grab; }
+  #show.dragging, #show.dragging.cursor { cursor: grabbing; }
   #show img.on { opacity: 1; }
   #cap { position: absolute; left: 16px; bottom: 14px; right: 16px; color: #fff; font-size: 14px;
          text-shadow: 0 1px 3px #000, 0 0 8px #000; pointer-events: none; white-space: pre-line; }
@@ -204,7 +208,7 @@
 <aside>
   <header class="top">
     <h1>PhotoShow</h1>
-    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-21.7</span>
+    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-21.8</span>
   </header>
 
   <section class="card">
@@ -262,9 +266,27 @@
       <div class="keys">
         <kbd>↑</kbd><kbd>↓</kbd> по порядку показа (в просмотре — соседние фото во всех папках) · <kbd>←</kbd><kbd>→</kbd> соседние фото на карте · <kbd>Пробел</kbd> пауза ·
         <kbd>+</kbd><kbd>−</kbd> интервал · <kbd>S</kbd> настройки · <kbd>I</kbd> подпись · <kbd>G</kbd> мини-карта · <kbd>M</kbd> к карте ·
-        <kbd>F</kbd> полный экран · <kbd>Пробел</kbd> в просмотре — слайд-шоу отсюда · <kbd>Esc</kbd> выход (из галереи — обратно в неё)
+        <kbd>Ctrl</kbd>+колесо — увеличить, <kbd>Ctrl</kbd>+мышь — двигать, <kbd>0</kbd> — сброс ·
+        <kbd>Ctrl</kbd>+<kbd>←</kbd><kbd>→</kbd> поворот (без сохранения) · <kbd>F</kbd> полный экран · <kbd>Пробел</kbd> в просмотре — слайд-шоу отсюда · <kbd>Esc</kbd> выход (из галереи — обратно в неё)
       </div>
     </details>
+  </section>
+
+  <section class="card" id="filterCard">
+    <div class="card-h">Фильтр <span class="grow"></span><span id="fltState" class="hint"></span>
+      <button id="fltReset" class="sm" hidden title="Показывать всё">сбросить</button></div>
+    <div class="lbl">Формат</div>
+    <div class="chips" id="fmtChips">
+      <label class="chip" title=".jpg, .jpeg"><input type="checkbox" data-fmt="jpg" checked>JPG</label>
+      <label class="chip" title="CR2, CR3, NEF, ARW, DNG, RAF, ORF, RW2…"><input type="checkbox" data-fmt="raw" checked>RAW</label>
+      <label class="chip" title=".heic, .heif (iPhone)"><input type="checkbox" data-fmt="heic" checked>HEIC</label>
+      <label class="chip" title="PNG, WebP, GIF, TIFF, BMP, AVIF"><input type="checkbox" data-fmt="other" checked>Другие</label>
+    </div>
+    <div class="lbl">Камера / телефон
+      <button id="camRefresh" class="sm" style="margin-left:6px" title="Прочитать EXIF всех фото всех папок и обновить список (результат кэшируется)">обновить список</button></div>
+    <div class="chips" id="camList"></div>
+    <div class="hint" id="camHint">Список появится после «Найти фото с геометками» или «обновить список».</div>
+    <div class="hint" style="margin-top:6px">Фильтр действует на слайд-шоу, просмотр, галерею и карту.</div>
   </section>
 
   <section class="card">
@@ -293,7 +315,7 @@
     <details class="more">
       <summary>Ещё</summary>
       <div class="hint">Учитываются отмеченные папки. Результаты чтения EXIF кэшируются — повторный поиск быстрый.</div>
-      <button id="clearCache" class="sm" style="margin-top:6px">Очистить кэш геометок</button>
+      <button id="clearCache" class="sm" style="margin-top:6px">Очистить кэш метаданных</button>
     </details>
   </section>
 
@@ -669,12 +691,14 @@ const listCache = new Map();
 function dropListCache() { listCache.clear(); }
 // scope: 'checked' — отмеченные папки; 'all' — всё без учёта отметок; 'selected' — выбранная папка с подпапками
 // cached: взять готовый список, если он есть (для быстрого просмотра); иначе — читать папки заново
-async function collect(scope = 'checked', { cached = false } = {}) {
+async function collect(scope = 'checked', { cached = false, nofilter = false } = {}) {
   const ck = scope + '|' + (scope === 'selected' && selected ? selected.srcId + '/' + selected.path : '');
-  if (cached && listCache.has(ck)) return listCache.get(ck);
-  const res = await collectFresh(scope);
-  if (res) listCache.set(ck, res);
-  return res;
+  let raw = cached && listCache.get(ck);
+  if (!raw) { raw = await collectFresh(scope); if (!raw) return null; listCache.set(ck, raw); }
+  if (nofilter || !filterActive()) return raw;
+  const out = await applyFilter(raw);
+  if (!out.length) { notice(`Фильтр скрыл все ${raw.length} фото этого набора — проверьте карточку «Фильтр».`); return null; }
+  return out;
 }
 async function collectFresh(scope) {
   let jobs;
@@ -734,15 +758,125 @@ function buildFrom(all, mode, n, startKey) {
   if (mode === 'nth') return strideOrder(all, n, i);
   return all;            // по порядку: весь список, старт с индекса i (см. startIndex)
 }
-async function readGps(entry, file) {
-  if (gpsMem.has(entry.key)) return gpsMem.get(entry.key);
-  const x = await metaParse(file || await entry.getFile(), { tiff: true, ifd0: false, exif: { pick: ['DateTimeOriginal'] }, gps: true,
-    ifd1: false, xmp: false, icc: false, iptc: false, jfif: false, interop: false, reviveValues: false }).catch(() => null);
+/* ============================ индекс метаданных ============================ */
+// metaMem: key -> { lat?, lon?, date, model }; одно чтение EXIF даёт и геометку, и дату, и модель камеры.
+// Кэш в IndexedDB по ключу «путь + размер + дата изменения» (префикс m2 — формат с моделью камеры).
+const metaMem = new Map();
+const META_OPTS = { tiff: true, ifd0: { pick: ['Make', 'Model'] }, exif: { pick: ['DateTimeOriginal'] }, gps: true,
+  ifd1: false, xmp: false, icc: false, iptc: false, jfif: false, interop: false, reviveValues: false };
+function cameraName(make, model) {
+  make = String(make || '').replace(/\0/g, '').trim(); model = String(model || '').replace(/\0/g, '').trim();
+  if (!model) return make;
+  const m0 = make.split(/\s+/)[0].toLowerCase();
+  if (!make || model.toLowerCase().startsWith(m0)) return model;          // «Canon Canon EOS R6» → «Canon EOS R6»
+  if (/^apple/i.test(make)) return model;                                   // «iPhone 13» понятнее, чем «Apple iPhone 13»
+  return (m0 === 'samsung' ? 'Samsung' : make.replace(/ (CORPORATION|CORP\.?|Co\.,? ?Ltd\.?|IMAGING|COMPANY)$/i, '')) + ' ' + model;
+}
+function metaFrom(x) {
+  const v = { date: (x && x.DateTimeOriginal) || '', model: x ? cameraName(x.Make, x.Model) : '' };
   const lat = x && x.latitude, lon = x && x.longitude;
-  const v = Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0) ? { lat, lon, date: x.DateTimeOriginal || '' } : null;
-  gpsMem.set(entry.key, v);
+  if (Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180) { v.lat = lat; v.lon = lon; }
   return v;
 }
+function remember(e, v) { metaMem.set(e.key, v); gpsMem.set(e.key, v.lat != null ? v : null); }
+// Прочитать метаданные для списка (из памяти, кэша или файла). Возвращает { fromCache, read }
+async function ensureMeta(list, onProgress) {
+  const todo = list.filter(e => !metaMem.has(e.key));
+  let next = 0, done = 0, fromCache = 0; const pending = [];
+  async function worker() {
+    while (next < todo.length) {
+      const e = todo[next++];
+      try {
+        const f = await e.getFile();
+        const ck = `m2|${e.key}|${f.size}|${f.lastModified}`;
+        let v = await DB.get('meta', ck).catch(() => null);
+        if (v) fromCache++;
+        else {
+          v = metaFrom(await metaParse(f, META_OPTS).catch(() => null));
+          pending.push([ck, v]);
+          if (pending.length >= 200) await DB.putMany('meta', pending.splice(0)).catch(() => {});
+        }
+        remember(e, v);
+      } catch (err) { console.warn(e.path, err); }
+      done++;
+      if (onProgress && (done % 25 === 0 || done === todo.length)) onProgress(done, todo.length);
+    }
+  }
+  await Promise.all(Array.from({ length: 8 }, worker));
+  if (pending.length) await DB.putMany('meta', pending).catch(() => {});
+  if (todo.length) renderCams();
+  return { fromCache, read: todo.length - fromCache, cached: list.length - todo.length };
+}
+async function readGps(entry, file) {
+  if (gpsMem.has(entry.key)) return gpsMem.get(entry.key);
+  const v = metaFrom(await metaParse(file || await entry.getFile(), META_OPTS).catch(() => null));
+  remember(entry, v);
+  return gpsMem.get(entry.key);
+}
+
+/* ============================ фильтр (формат, камера) ============================ */
+const fmtOf = (name) => RAW_RE.test(name) ? 'raw' : /\.jpe?g$/i.test(name) ? 'jpg' : /\.hei[cf]$/i.test(name) ? 'heic' : 'other';
+const flt = (() => {
+  const v = load('filter', null) || {};
+  return { fmt: Object.assign({ jpg: true, raw: true, heic: true, other: true }, v.fmt || {}),
+           offModels: new Set(v.offModels || []), known: v.known || [] };      // known — камеры, встречавшиеся раньше
+})();
+const NO_CAM = '';                    // фото без сведений о камере
+const camLabel = (m) => m || 'нет данных о камере';
+function saveFilter() { store('filter', { fmt: flt.fmt, offModels: [...flt.offModels], known: flt.known }); }
+const filterActive = () => Object.values(flt.fmt).some(x => !x) || flt.offModels.size > 0;
+async function applyFilter(list) {
+  let out = list.filter(e => flt.fmt[fmtOf(e.name)] !== false);
+  if (flt.offModels.size) {
+    await ensureMeta(out, (d, n) => status(`Чтение EXIF для фильтра по камерам: ${d} / ${n}`));
+    out = out.filter(e => !flt.offModels.has((metaMem.get(e.key) || {}).model || NO_CAM));
+  }
+  return out;
+}
+function renderCams() {
+  const counts = new Map();
+  for (const v of metaMem.values()) counts.set(v.model || NO_CAM, (counts.get(v.model || NO_CAM) || 0) + 1);
+  for (const m of counts.keys()) if (!flt.known.includes(m)) flt.known.push(m);
+  for (const m of flt.offModels) if (!flt.known.includes(m)) flt.known.push(m);
+  const names = [...flt.known].sort((a, b) => (counts.get(b) || 0) - (counts.get(a) || 0) || (a === NO_CAM) - (b === NO_CAM) || cmpName(a, b));
+  const box = $('camList'); box.innerHTML = '';
+  for (const m of names) {
+    const l = document.createElement('label'); l.className = 'chip';
+    l.innerHTML = `<input type="checkbox" ${flt.offModels.has(m) ? '' : 'checked'}>${esc(camLabel(m))}${counts.has(m) ? ` <span class="n">${counts.get(m)}</span>` : ''}`;
+    l.querySelector('input').onchange = (ev) => { ev.target.checked ? flt.offModels.delete(m) : flt.offModels.add(m); filterChanged(); };
+    box.appendChild(l);
+  }
+  $('camHint').hidden = names.length > 0;
+  saveFilter(); fltState();
+}
+function fltState() {
+  const on = filterActive();
+  $('fltState').textContent = on ? 'включён' : '';
+  $('fltReset').hidden = !on;
+}
+let fltTimer = null;
+function filterChanged() {
+  saveFilter(); fltState(); dropListCache();
+  clearTimeout(fltTimer);
+  fltTimer = setTimeout(() => { if (mapAll.length) scanGps({ fit: false }); }, 400);    // карта — по новому фильтру
+}
+document.querySelectorAll('#fmtChips input').forEach(i => {
+  i.checked = flt.fmt[i.dataset.fmt] !== false;
+  i.onchange = () => { flt.fmt[i.dataset.fmt] = i.checked; filterChanged(); };
+});
+$('fltReset').onclick = () => {
+  for (const k in flt.fmt) flt.fmt[k] = true; flt.offModels.clear();
+  document.querySelectorAll('#fmtChips input').forEach(i => i.checked = true);
+  renderCams(); filterChanged();
+};
+$('camRefresh').onclick = async () => {
+  const all = await collect('all', { cached: true, nofilter: true }); if (!all) return;
+  $('camRefresh').disabled = true;
+  try {
+    const r = await ensureMeta(all, (d, n) => { progress(d, n); status(`Чтение EXIF: ${d} / ${n}`); });
+    status(`Камер: ${new Set([...metaMem.values()].map(v => v.model)).size} · фото: ${all.length} (прочитано ${r.read}, из кэша ${r.fromCache + r.cached})`);
+  } finally { progress(null); $('camRefresh').disabled = false; renderCams(); }
+};
 
 /* ============================ RAW ============================ */
 // Браузеры не декодируют RAW, но почти в каждом RAW лежит JPEG-превью от камеры (часто полноразмерное).
@@ -998,6 +1132,33 @@ const Show = (() => {
   const cache = new Map();          // entry.key -> Promise<{url, file, ok}>; небольшой LRU
   let osdTimer, cursorTimer;
 
+  /* ---------- масштаб / перемещение / поворот (только на экране, файл не меняется) ---------- */
+  const rotMem = new Map();          // key -> 0/90/180/270, до перезагрузки страницы
+  let zs = 1, zx = 0, zy = 0, dims = { w: 0, h: 0 };
+  function resetZoom() { zs = 1; zx = 0; zy = 0; el.classList.remove('zoomed'); }
+  function fitRot(deg) {             // при повороте на 90° картинку надо уменьшить, чтобы она влезла в экран
+    if (deg % 180 === 0 || !dims.w) return 1;
+    const W = el.clientWidth, H = el.clientHeight, k = Math.min(W / dims.w, H / dims.h), dw = dims.w * k, dh = dims.h * k;
+    return Math.min(W / dh, H / dw);
+  }
+  function applyT(im = imgs[cur]) {
+    const deg = shown ? (rotMem.get(shown.key) || 0) : 0;
+    im.style.transform = `translate(${zx}px, ${zy}px) scale(${zs * fitRot(deg)}) rotate(${deg}deg)`;
+    el.classList.toggle('zoomed', zs > 1);
+  }
+  function zoomAt(cx, cy, ns) {      // cx, cy — от центра экрана; точка под курсором остаётся на месте
+    ns = Math.min(12, Math.max(1, ns));
+    zx = cx - (ns / zs) * (cx - zx); zy = cy - (ns / zs) * (cy - zy); zs = ns;
+    if (zs === 1) { zx = 0; zy = 0; }
+    applyT();
+    if (zs > 1) { clearTimeout(timer); bar.style.transition = 'none'; bar.style.width = '0'; } else schedule();   // пока разглядываем — не листаем
+  }
+  function rotate(d) {
+    if (!shown) return;
+    const deg = (((rotMem.get(shown.key) || 0) + d) % 360 + 360) % 360;
+    rotMem.set(shown.key, deg); resetZoom(); applyT(); flash(`Поворот ${deg}° (файл не меняется)`);
+  }
+
   function prep(e) {
     let p = cache.get(e.key);
     if (p) { cache.delete(e.key); cache.set(e.key, p); return p; }
@@ -1005,7 +1166,7 @@ const Show = (() => {
       const file = await e.getFile();
       const url = URL.createObjectURL(await displayBlob(file));
       const im = new Image(); im.src = url;
-      try { await im.decode(); return { url, file, ok: true }; }
+      try { await im.decode(); return { url, file, ok: true, w: im.naturalWidth, h: im.naturalHeight }; }
       catch (err) { return { url, file, ok: false }; }
     })();
     cache.set(e.key, p);
@@ -1022,8 +1183,8 @@ const Show = (() => {
     if (my !== token) return null;
     if (!r.ok) return r;
     const next = imgs[cur ^ 1], prev = imgs[cur];
+    shown = e; dims = { w: r.w, h: r.h }; resetZoom(); applyT(next);
     next.src = r.url; next.classList.add('on'); prev.classList.remove('on'); cur ^= 1;
-    shown = e;
     cap.textContent = '';
     if (showCap) {
       cap.textContent = `${e.path}\n${note}`;
@@ -1119,7 +1280,7 @@ const Show = (() => {
 
   function schedule() {
     clearTimeout(timer);
-    if (paused || !open || viewMode || !auto) { bar.style.transition = 'none'; bar.style.width = '0'; return; }
+    if (paused || !open || viewMode || !auto || zs > 1) { bar.style.transition = 'none'; bar.style.width = '0'; return; }
     bar.style.transition = 'none'; bar.style.width = '0'; void bar.offsetWidth;
     bar.style.transition = `width ${intervalMs}ms linear`; bar.style.width = '100%';
     const my = token;
@@ -1161,7 +1322,8 @@ const Show = (() => {
     togglePanel(false);
     open = false; token++; clearTimeout(timer); el.classList.remove('open');
     dropCache(); walk = null; shown = null;
-    imgs.forEach(im => { im.removeAttribute('src'); im.classList.remove('on'); });
+    imgs.forEach(im => { im.removeAttribute('src'); im.classList.remove('on'); im.style.transform = ''; });
+    resetZoom();
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   }
   async function start(opts) {
@@ -1218,7 +1380,7 @@ const Show = (() => {
     if (paused) { clearTimeout(timer); bar.style.transition = 'none'; bar.style.width = '0'; } else schedule();
   }
   $('tools').addEventListener('click', (ev) => ev.stopPropagation());
-  [...document.querySelectorAll('#tools button, #mini button')].forEach(b => b.addEventListener('click', (ev) => {
+  [...document.querySelectorAll('#tools button, #mini button, #showPanel .sp-h button')].forEach(b => b.addEventListener('click', (ev) => {
     ev.stopPropagation();
     const a = b.dataset.a;
     if (a === 'mini') Mini.toggle(); else if (a === 'map') toMap(); else if (a === 'pause') togglePause(); else if (a === 'close') close();
@@ -1231,6 +1393,9 @@ const Show = (() => {
     const k = ev.key;
     if (ev.target.matches && ev.target.matches('input[type=number], input[type=text], select') && k !== 'Escape') return;   // печатают в поле настроек
     if (k === 'Escape' && !panel.hidden) { togglePanel(false); ev.preventDefault(); return; }
+    if (k === 'Escape' && zs > 1) { resetZoom(); applyT(); schedule(); ev.preventDefault(); return; }
+    if (ev.ctrlKey && (k === 'ArrowLeft' || k === 'ArrowRight')) { rotate(k === 'ArrowRight' ? 90 : -90); ev.preventDefault(); return; }
+    if (k === '0' && !ev.ctrlKey) { resetZoom(); applyT(); schedule(); ev.preventDefault(); return; }
     if (k === 'ArrowDown' || k === 'PageDown') step(1);
     else if (k === 'ArrowUp' || k === 'PageUp') step(-1);
     else if (k === 'ArrowRight') spatial(1);
@@ -1251,8 +1416,38 @@ const Show = (() => {
     ev.preventDefault();
   });
   // мышь: клик/колесо — по порядку показа (как ↑/↓)
-  el.addEventListener('click', (ev) => { ev.clientX < innerWidth / 3 ? step(-1) : step(1); });
-  el.addEventListener('wheel', (ev) => { ev.deltaY > 0 ? step(1) : step(-1); }, { passive: true });
+  // Ctrl+колесо — масштаб вокруг курсора; Ctrl+перетаскивание (или просто перетаскивание, когда увеличено) — сдвиг
+  let drag = null, dragged = false;
+  el.addEventListener('wheel', (ev) => {
+    if (ev.target.closest('#showPanel, #mini')) return;
+    if (ev.ctrlKey) {                               // сюда же приходит «щипок» на тачпаде
+      ev.preventDefault();
+      const r = el.getBoundingClientRect();
+      zoomAt(ev.clientX - r.left - r.width / 2, ev.clientY - r.top - r.height / 2, zs * Math.exp(-ev.deltaY * 0.0015));
+      return;
+    }
+    ev.deltaY > 0 ? step(1) : step(-1);
+  }, { passive: false });
+  el.addEventListener('pointerdown', (ev) => {
+    if (ev.button !== 0 || ev.target.closest('#showPanel, #mini, #tools')) return;
+    dragged = false;
+    if (!(ev.ctrlKey || zs > 1)) return;
+    drag = { x: ev.clientX, y: ev.clientY, zx, zy };
+    el.setPointerCapture(ev.pointerId); el.classList.add('dragging'); ev.preventDefault();
+  });
+  el.addEventListener('pointermove', (ev) => {
+    if (!drag) return;
+    const dx = ev.clientX - drag.x, dy = ev.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 3) dragged = true;
+    zx = drag.zx + dx; zy = drag.zy + dy; applyT();
+  });
+  el.addEventListener('pointerup', () => { drag = null; el.classList.remove('dragging'); });
+  el.addEventListener('click', (ev) => {
+    if (ev.ctrlKey || zs > 1 || dragged) { dragged = false; return; }   // щелчок при масштабе не листает
+    ev.clientX < innerWidth / 3 ? step(-1) : step(1);
+  });
+  el.addEventListener('dblclick', () => { if (zs > 1) { resetZoom(); applyT(); schedule(); } });
+  addEventListener('resize', () => { if (open) applyT(); });
   el.addEventListener('mousemove', () => { el.classList.add('cursor'); clearTimeout(cursorTimer); cursorTimer = setTimeout(() => el.classList.remove('cursor'), 1500); });
   return { start, view, close, applySettings, get open() { return open; } };
 })();
@@ -1501,51 +1696,24 @@ const MapView = (() => {
   return { setPoints, focus, visibleEntries, setLook, map, get points() { return points; } };
 })();
 
-/* сканирование геометок с кэшем в IndexedDB (ключ: путь + размер + дата изменения) */
+/* карта: фото с геометками из отмеченных папок (с учётом фильтра); метаданные — через индекс */
 async function scanGps({ fit = true } = {}) {
   saveSettings();
   const all = await collect('checked'); if (!all) return;
   mapAll = all;
   $('scan').disabled = true;
   const t0 = performance.now();
-  const results = new Array(all.length);
-  let done = 0, fromCache = 0, next = 0;
-  const pending = [];
-  async function worker() {
-    while (next < all.length) {
-      const i = next++; const e = all[i];
-      try {
-        const f = await e.getFile();
-        const ck = `gps|${e.key}|${f.size}|${f.lastModified}`;
-        let v = await DB.get('meta', ck);
-        if (v) fromCache++;
-        else {
-          const x = await metaParse(f, { tiff: true, ifd0: { pick: ['Orientation'] }, exif: { pick: ['DateTimeOriginal'] }, gps: true,
-            ifd1: false, xmp: false, icc: false, iptc: false, jfif: false, interop: false, reviveValues: false }).catch(() => null);
-          const lat = x && x.latitude, lon = x && x.longitude;
-          const ok = Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
-          v = ok ? { lat, lon, date: x.DateTimeOriginal || '' } : { none: 1 };
-          pending.push([ck, v]);
-          if (pending.length >= 200) await DB.putMany('meta', pending.splice(0)).catch(() => {});
-        }
-        gpsMem.set(e.key, v.none ? null : v);
-        if (!v.none) results[i] = { lat: v.lat, lon: v.lon, date: v.date, entry: e };
-      } catch (err) { console.warn(e.path, err); }
-      done++;
-      if (done % 25 === 0 || done === all.length) { progress(done, all.length); status(`Чтение геометок: ${done} / ${all.length}`); }
-    }
-  }
   try {
-    await Promise.all(Array.from({ length: 8 }, worker));
-    if (pending.length) await DB.putMany('meta', pending).catch(() => {});
-    const pts = results.filter(Boolean);
+    const r = await ensureMeta(all, (d, n) => { progress(d, n); status(`Чтение метаданных: ${d} / ${n}`); });
+    const pts = [];
+    for (const e of all) { const v = metaMem.get(e.key); if (v && v.lat != null) pts.push({ lat: v.lat, lon: v.lon, date: v.date, entry: e }); }
     MapView.setPoints(pts, { fit });
     const sec = ((performance.now() - t0) / 1000).toFixed(1);
-    status(`Фото с геометками: ${pts.length} из ${all.length} (из кэша: ${fromCache}, ${sec} с).`);
-  } finally { progress(null); $('scan').disabled = false; }
+    status(`Фото с геометками: ${pts.length} из ${all.length}${filterActive() ? ' (с фильтром)' : ''} · прочитано ${r.read}, из кэша ${r.fromCache + r.cached} · ${sec} с`);
+  } finally { progress(null); $('scan').disabled = false; renderCams(); }
 }
 $('scan').onclick = () => scanGps();
-$('clearCache').onclick = async () => { await DB.clear('meta').catch(() => {}); status('Кэш геометок очищен.'); };
+$('clearCache').onclick = async () => { await DB.clear('meta').catch(() => {}); metaMem.clear(); gpsMem.clear(); status('Кэш метаданных очищен.'); };
 
 /* ============================ настройки ============================ */
 function saveSettings() {
@@ -1585,6 +1753,7 @@ else if (!hasFSA) {
     'Папки можно добавлять, но доступ не сохранится: после перезагрузки страницы их придётся выбрать снова. Для полного режима — Chrome или Edge.', false, true);
   $('addDirCompat').hidden = true;
 }
+renderCams();
 loadSources();
 </script>
 </body>
