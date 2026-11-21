@@ -5,12 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PhotoShow</title>
 <!-- Библиотеки лежат в репозитории (lib/), CDN не нужен:
-     Leaflet 1.9.4 (BSD-2), Leaflet.markercluster 1.5.3 (MIT), exifr 7.1.3 (MIT) -->
-<link rel="stylesheet" href="lib/leaflet/leaflet.css">
-<link rel="stylesheet" href="lib/markercluster/MarkerCluster.css">
-<link rel="stylesheet" href="lib/markercluster/MarkerCluster.Default.css">
-<script src="lib/leaflet/leaflet.js"></script>
-<script src="lib/markercluster/leaflet.markercluster.js"></script>
+     MapLibre GL JS 5.24.1 (BSD-3), exifr 7.1.3 (MIT) -->
+<link rel="stylesheet" href="lib/maplibre/maplibre-gl.css">
+<script src="lib/maplibre/maplibre-gl.js"></script>
 <script src="lib/exifr/full.umd.js"></script>
 <style>
   :root {
@@ -91,16 +88,49 @@
           background: #111; border: 1px solid rgba(255,255,255,.3); border-radius: 8px; overflow: hidden;
           display: none; flex-direction: column; cursor: default; box-shadow: 0 4px 20px rgba(0,0,0,.6); }
   #mini.on { display: flex; }
-  #miniMap { flex: 1; }
+  #miniMap { flex: 1; position: relative; }
   #miniBar { display: flex; gap: 6px; align-items: center; padding: 6px; background: #1a1a1a; color: #ddd; font-size: 12px; }
   #miniBar span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #mini button { padding: 3px 8px; font-size: 12px; }
   #bar { position: absolute; left: 0; bottom: 0; height: 2px; background: rgba(255,255,255,.5); width: 0; }
 
+  /* --- галерея --- */
+  #gallery { position: fixed; inset: 0; z-index: 4000; background: var(--bg); display: flex; flex-direction: column; }
+  #gallery[hidden] { display: none; }
+  .ghead { display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .ghead b { font-size: 16px; }
+  .gsz { display: flex; align-items: center; gap: 6px; }
+  #gGrid { --gs: 150px; flex: 1; overflow-y: auto; padding: 12px 16px; display: grid; gap: 8px;
+           grid-template-columns: repeat(auto-fill, minmax(var(--gs), 1fr)); align-content: start; }
+  .tile { position: relative; aspect-ratio: 1; border-radius: 6px; overflow: hidden; background: color-mix(in srgb, var(--muted) 25%, transparent);
+          cursor: pointer; content-visibility: auto; contain-intrinsic-size: var(--gs) var(--gs); }
+  .tile img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity .25s; }
+  .tile img.ld { opacity: 1; }
+  .tile:hover { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .tile .nm { position: absolute; left: 0; right: 0; bottom: 0; padding: 14px 6px 4px; font-size: 11px; color: #fff;
+              background: linear-gradient(transparent, rgba(0,0,0,.7)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+              opacity: 0; transition: opacity .2s; }
+  .tile:hover .nm { opacity: 1; }
+  .tile .geo { position: absolute; top: 4px; right: 4px; padding: 0 4px; font-size: 13px; background: rgba(0,0,0,.55); border: 0; color: #fff; border-radius: 4px; }
+  @media (max-width: 760px) { #gGrid { padding: 8px; gap: 4px; } }
+
+  /* --- выделение области на карте --- */
+  .selbox { position: absolute; border: 2px dashed var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); pointer-events: none; z-index: 3; }
+  .selctl button.on { background: color-mix(in srgb, var(--accent) 30%, #fff); }
+  .selctl button { font-size: 15px; }
+
   /* --- маркеры --- */
   .ph { width: 52px; height: 52px; border-radius: 6px; border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.5);
-        background: #888; overflow: hidden; }
-  .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        background: #888; cursor: pointer; position: relative; }
+  .ph img { width: 100%; height: 100%; object-fit: cover; display: block; border-radius: 4px; }
+  .ph:hover { z-index: 2; outline: 2px solid var(--accent); }
+  .ph.clu { border-color: #ffd54a; box-shadow: 3px 3px 0 -1px #fff, 3px 3px 0 0 rgba(0,0,0,.35), 0 1px 4px rgba(0,0,0,.5); }
+  .ph .cnt { position: absolute; right: -8px; top: -8px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+             background: #e11d48; color: #fff; font: 600 11px/20px system-ui, sans-serif; text-align: center; }
+  .gal .grid { display: grid; grid-template-columns: repeat(auto-fill, 56px); gap: 6px; max-height: 300px; overflow: auto; margin-top: 6px; padding: 4px; }
+  .gal .ph { width: 56px; height: 56px; }
+  .maplibregl-popup-content { color: #1d2330; }
+  .basectl select { border: 0; padding: 5px 6px; font: 12px system-ui, sans-serif; background: #fff; color: #333; }
   .pop img { max-width: 280px; max-height: 280px; display: block; margin: 0 auto 6px; border-radius: 4px; }
   .pop .p { font-size: 12px; color: #555; word-break: break-all; }
   .pop .row { margin-top: 6px; }
@@ -130,8 +160,10 @@
   <ul id="sources"></ul>
   <div class="hint" id="noSources">Папок пока нет.</div>
   <div class="hint">▸ — подпапки · флажок — учитывать в слайд-шоу и на карте · щелчок по имени — выбрать папку</div>
+  <label class="opt" title="Камера пишет RAW+JPEG: чтобы кадры не задваивались, RAW показывается, только если рядом нет JPEG/HEIC с тем же именем">
+    <input type="checkbox" id="rawSkip" checked> RAW: пропускать, если рядом есть JPEG с тем же именем</label>
 
-  <h2>Слайд-шоу</h2>
+  <h2>Слайд-шоу и галерея</h2>
   <div class="hint">Что показывать:</div>
   <label class="opt"><input type="radio" name="scope" value="checked" checked> Отмеченные папки</label>
   <label class="opt"><input type="radio" name="scope" value="selected"> Выбранную папку <span id="selLabel" class="hint"></span></label>
@@ -148,11 +180,12 @@
   <label class="opt"><input type="checkbox" id="fade" checked> Плавная смена</label>
   <label class="opt"><input type="checkbox" id="loop" checked> Зациклить</label>
   <div class="row" style="margin-top:8px">
-    <button id="start" class="primary grow">▶ Запустить слайд-шоу</button>
+    <button id="start" class="primary grow">▶ Слайд-шоу</button>
+    <button id="galleryBtn" class="grow" title="Плитка миниатюр того же набора">▦ Галерея</button>
   </div>
   <div class="keys" style="margin-top:8px">
     <kbd>←</kbd>/<kbd>→</kbd> назад/вперёд · <kbd>Пробел</kbd> пауза · <kbd>+</kbd>/<kbd>−</kbd> интервал ·
-    <kbd>I</kbd> подпись · <kbd>G</kbd> мини-карта · <kbd>M</kbd> прервать и перейти к карте · <kbd>F</kbd> полный экран · <kbd>Esc</kbd> выход
+    <kbd>I</kbd> подпись · <kbd>G</kbd> мини-карта · <kbd>M</kbd> прервать и перейти к карте · <kbd>F</kbd> полный экран · <kbd>Esc</kbd> выход (из просмотра из галереи — обратно в галерею)
   </div>
 
   <h2>Карта</h2>
@@ -171,6 +204,16 @@
 </aside>
 <main><div id="map"></div></main>
 
+<div id="gallery" hidden>
+  <div class="ghead">
+    <b id="gTitle"></b><span id="gCount" class="hint"></span><span class="grow"></span>
+    <label class="hint gsz">Размер <input type="range" id="gSize" min="90" max="300" value="150"></label>
+    <button id="gPlay" class="primary" title="Слайд-шоу по этому набору в выбранном порядке">▶ Слайд-шоу</button>
+    <button id="gClose" title="Закрыть (Esc)">✕</button>
+  </div>
+  <div id="gGrid"></div>
+</div>
+
 <div id="show">
   <img id="imgA" alt=""><img id="imgB" alt="">
   <div id="cap"></div><div id="osd"></div><div id="bar"></div>
@@ -183,7 +226,9 @@
 'use strict';
 /* ============================ утилиты ============================ */
 const $ = (id) => document.getElementById(id);
-const IMG_RE = /\.(jpe?g|png|gif|webp|bmp|avif|heic|heif|tiff?)$/i;
+const RAW_RE = /\.(cr2|cr3|crw|nef|nrw|arw|srf|sr2|dng|raf|orf|rw2|rwl|pef|srw|x3f|3fr|fff|iiq|erf|kdc|mrw|mos|mef|gpr)$/i;
+const IMG_RE = /\.(jpe?g|png|gif|webp|bmp|avif|heic|heif|tiff?|cr2|cr3|crw|nef|nrw|arw|srf|sr2|dng|raf|orf|rw2|rwl|pef|srw|x3f|3fr|fff|iiq|erf|kdc|mrw|mos|mef|gpr)$/i;
+const baseName = (n) => n.replace(/\.[^.]+$/, '').toLowerCase();
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 const cmpName = (a, b) => collator.compare(a, b);
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
@@ -467,13 +512,18 @@ document.addEventListener('drop', async (e) => {
 /* ============================ обход файлов ============================ */
 // entry: { key, srcId, dir (путь папки внутри источника), name, path (для подписи), getFile() }
 // opt: { root — с какой папки начинать, from — для isExcluded, ignore — не учитывать отметки вовсе }
+const rawSkip = () => $('rawSkip').checked;
 async function listSource(src, opt, onCount) {
   const { root = '', from = null, ignore = false } = opt;
   const skip = (dir) => !ignore && isExcluded(src, dir, from);
   const out = [];
   const mk = (rel, name, getFile) => ({ key: src.id + '/' + rel, srcId: src.id, dir: parentOf(rel), name, path: src.name + '/' + rel, getFile });
   if (src.kind === 'files') {
-    const items = src.files.filter(f => { const d = parentOf(f.rel); return IMG_RE.test(f.rel) && under(d, root) && !skip(d); });
+    let items = src.files.filter(f => { const d = parentOf(f.rel); return IMG_RE.test(f.rel) && under(d, root) && !skip(d); });
+    if (rawSkip()) {
+      const plain = new Set(items.filter(f => !RAW_RE.test(f.rel)).map(f => parentOf(f.rel) + '/' + baseName(f.file.name)));
+      items = items.filter(f => !RAW_RE.test(f.rel) || !plain.has(parentOf(f.rel) + '/' + baseName(f.file.name)));
+    }
     const split = items.map(f => ({ f, parts: f.rel.split('/') }));
     split.sort((a, b) => cmpPaths(a.parts, b.parts));
     for (const { f } of split) out.push(mk(f.rel, f.file.name, async () => f.file));
@@ -488,7 +538,9 @@ async function listSource(src, opt, onCount) {
     }
     files.sort((a, b) => cmpName(a.name, b.name));
     dirs.sort((a, b) => cmpName(a.name, b.name));
-    for (const h of files) out.push(mk(prefix + h.name, h.name, () => h.getFile()));
+    let fs = files;
+    if (rawSkip()) { const plain = new Set(files.filter(h => !RAW_RE.test(h.name)).map(h => baseName(h.name))); fs = files.filter(h => !RAW_RE.test(h.name) || !plain.has(baseName(h.name))); }
+    for (const h of fs) out.push(mk(prefix + h.name, h.name, () => h.getFile()));
     onCount && onCount(out.length);
     for (const d of dirs) await walk(d, prefix + d.name + '/');
   }
@@ -571,7 +623,7 @@ function buildFrom(all, mode, n, startKey) {
 }
 async function readGps(entry, file) {
   if (gpsMem.has(entry.key)) return gpsMem.get(entry.key);
-  const x = await exifr.parse(file || await entry.getFile(), { tiff: true, ifd0: false, exif: { pick: ['DateTimeOriginal'] }, gps: true,
+  const x = await metaParse(file || await entry.getFile(), { tiff: true, ifd0: false, exif: { pick: ['DateTimeOriginal'] }, gps: true,
     ifd1: false, xmp: false, icc: false, iptc: false, jfif: false, interop: false, reviveValues: false }).catch(() => null);
   const lat = x && x.latitude, lon = x && x.longitude;
   const v = Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0) ? { lat, lon, date: x.DateTimeOriginal || '' } : null;
@@ -579,24 +631,167 @@ async function readGps(entry, file) {
   return v;
 }
 
+/* ============================ RAW ============================ */
+// Браузеры не декодируют RAW, но почти в каждом RAW лежит JPEG-превью от камеры (часто полноразмерное).
+// Ищем в файле все JPEG-потоки и берём самый большой; lossless/arithmetic JPEG (это сами данные сенсора) пропускаем.
+// Работает одинаково для TIFF-подобных (CR2, NEF, ARW, DNG, PEF, ORF, RW2…) и прочих (CR3, RAF).
+const Raw = (() => {
+  function parseJpeg(u8, s) {             // → { start, end, w, h } или null
+    const n = u8.length; let p = s + 2, w = 0, h = 0;
+    while (p < n - 3) {
+      if (u8[p] !== 0xFF) return null;
+      const m = u8[p + 1];
+      if (m === 0xFF) { p++; continue; }                        // заполнитель
+      if (m === 0xD9) return w ? { start: s, end: p + 2, w, h } : null;
+      if ((m >= 0xD0 && m <= 0xD7) || m === 0x01) { p += 2; continue; }
+      const len = (u8[p + 2] << 8) | u8[p + 3];
+      if (len < 2) return null;
+      if (m === 0xC0 || m === 0xC1 || m === 0xC2) { h = (u8[p + 5] << 8) | u8[p + 6]; w = (u8[p + 7] << 8) | u8[p + 8]; }
+      else if (m >= 0xC3 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) return null;   // lossless / arithmetic
+      p += 2 + len;
+      if (m === 0xDA) {                                          // энтропийные данные — до следующего маркера
+        while (p < n - 1 && !(u8[p] === 0xFF && u8[p + 1] !== 0x00 && !(u8[p + 1] >= 0xD0 && u8[p + 1] <= 0xD7))) p++;
+      }
+    }
+    return null;
+  }
+  function bestJpeg(u8) {
+    let best = null, i = 0; const n = u8.length - 3;
+    while (i < n) {
+      if (u8[i] === 0xFF && u8[i + 1] === 0xD8 && u8[i + 2] === 0xFF) {
+        const r = parseJpeg(u8, i);
+        if (r) { if (!best || r.w * r.h > best.w * best.h) best = r; i = r.end; continue; }
+      }
+      i++;
+    }
+    return best;
+  }
+  async function rotate(blob, o) {           // применяем EXIF-ориентацию RAW к превью, в котором её нет
+    const bmp = await createImageBitmap(blob);
+    const rot = o >= 5 && o <= 8, c = document.createElement('canvas');
+    c.width = rot ? bmp.height : bmp.width; c.height = rot ? bmp.width : bmp.height;
+    const g = c.getContext('2d'); g.translate(c.width / 2, c.height / 2);
+    if (o === 3) g.rotate(Math.PI); else if (o === 6) g.rotate(Math.PI / 2); else if (o === 8) g.rotate(-Math.PI / 2);
+    g.drawImage(bmp, -bmp.width / 2, -bmp.height / 2); bmp.close && bmp.close();
+    return new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
+  }
+  const cache = new Map();                   // небольшой LRU: превью бывают по 5–15 МБ
+  function preview(file) {                   // → Promise<{ blob (для показа), jpeg (как в файле), w, h }>
+    const k = `${file.name}|${file.size}|${file.lastModified}`;
+    if (cache.has(k)) { const v = cache.get(k); cache.delete(k); cache.set(k, v); return v; }
+    const pr = (async () => {
+      const u8 = new Uint8Array(await file.arrayBuffer());
+      const b = bestJpeg(u8);
+      if (!b) throw new Error('в RAW-файле не найдено JPEG-превью');
+      const jpeg = new Blob([u8.subarray(b.start, b.end)], { type: 'image/jpeg' });
+      let blob = jpeg;
+      const own = await exifr.orientation(jpeg).catch(() => undefined);      // у превью своя ориентация — браузер применит сам
+      if (!own) { const o = await exifr.orientation(file).catch(() => 1); if (o && o !== 1) blob = await rotate(jpeg, o); }
+      return { blob, jpeg, w: b.w, h: b.h };
+    })();
+    cache.set(k, pr); pr.catch(() => cache.delete(k));
+    while (cache.size > 6) cache.delete(cache.keys().next().value);
+    return pr;
+  }
+  return { preview, bestJpeg };
+})();
+// Что показывать в <img>: обычный файл как есть, RAW — его превью
+const displayBlob = async (file) => RAW_RE.test(file.name) ? (await Raw.preview(file)).blob : file;
+// EXIF: из самого файла; для RAW, который exifr не понимает (CR3, RAF…), — из встроенного превью
+async function metaParse(file, opts) {
+  let x = null;
+  try { x = await exifr.parse(file, opts); } catch (e) {}
+  if ((!x || (x.latitude == null && !x.DateTimeOriginal)) && RAW_RE.test(file.name)) {
+    try { const y = await exifr.parse((await Raw.preview(file)).jpeg, opts); if (y) x = Object.assign({}, y, x || {}); } catch (e) {}
+  }
+  return x;
+}
+
+/* ============================ миниатюры ============================ */
+const Thumbs = (() => {
+  // сначала встроенная в EXIF миниатюра (быстро), иначе — уменьшение полного файла; результат — objectURL
+  const thumbs = new Map();
+  let active = 0; const queue = [];
+  // big = true — крупная (≈360 px) миниатюра для галереи: всегда из полного файла, это медленнее
+  function thumb(entry, big = false) {
+    const k = entry.key + (big ? '|L' : '');
+    if (!thumbs.has(k)) thumbs.set(k, new Promise((res) => { queue.push({ entry, big, res }); pump(); }));
+    return thumbs.get(k);
+  }
+  function pump() {
+    while (active < 4 && queue.length) {
+      const { entry, big, res } = queue.pop();   // последний запрос — первым: при прокрутке грузится то, что на экране
+      active++;
+      makeThumb(entry, big).then(res, () => res(null)).finally(() => { active--; pump(); });
+    }
+  }
+  async function makeThumb(entry, big) {
+    const file = await entry.getFile();
+    if (big) return canvasUrl(await createImageBitmap(await displayBlob(file)), 360, 1);
+    try {
+      const t = await exifr.thumbnail(file);
+      if (t && t.length) {
+        const bmp = await createImageBitmap(new Blob([t], { type: 'image/jpeg' }));
+        const o = await exifr.orientation(file).catch(() => 1);
+        return canvasUrl(bmp, 160, o);
+      }
+    } catch (e) {}
+    const bmp = await createImageBitmap(await displayBlob(file));   // применяет EXIF-ориентацию сам; RAW — через превью
+    return canvasUrl(bmp, 160, 1);
+  }
+  async function canvasUrl(bmp, sz, orient) {
+    const rot = orient === 6 || orient === 8 || orient === 5 || orient === 7;
+    const w0 = bmp.width, h0 = bmp.height, s = sz / Math.max(w0, h0);
+    const w = Math.max(1, Math.round(w0 * s)), h = Math.max(1, Math.round(h0 * s));
+    const c = document.createElement('canvas'); c.width = rot ? h : w; c.height = rot ? w : h;
+    const g = c.getContext('2d');
+    g.translate(c.width / 2, c.height / 2);
+    if (orient === 3) g.rotate(Math.PI); else if (orient === 6) g.rotate(Math.PI / 2); else if (orient === 8) g.rotate(-Math.PI / 2);
+    g.drawImage(bmp, -w / 2, -h / 2, w, h); bmp.close && bmp.close();
+    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8));
+    return URL.createObjectURL(blob);
+  }
+  return { get: thumb };
+})();
+
+/* ============================ подложки карты ============================ */
+function rasterStyle(tiles, maxzoom, attribution) {
+  return { version: 8, sources: { base: { type: 'raster', tiles: [].concat(tiles), tileSize: 256, maxzoom, attribution } },
+           layers: [{ id: 'base', type: 'raster', source: 'base' }] };
+}
+const BASEMAPS = {
+  osm: { name: 'OpenStreetMap', style: rasterStyle('https://tile.openstreetmap.org/{z}/{x}/{y}.png', 19,
+    '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a>') },
+  ofm: { name: 'OpenFreeMap (вектор)', style: 'https://tiles.openfreemap.org/styles/liberty' },
+  topo: { name: 'OpenTopoMap (рельеф)', style: rasterStyle(['a', 'b', 'c'].map(s => `https://${s}.tile.opentopomap.org/{z}/{x}/{y}.png`), 17,
+    '&copy; OpenStreetMap, SRTM | &copy; <a href="https://opentopomap.org" target="_blank">OpenTopoMap</a> (CC-BY-SA)') },
+  sat: { name: 'Спутник (Esri)', style: rasterStyle('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', 19,
+    'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community') },
+};
+const hasMap = !!window.maplibregl;
+
 /* ============================ мини-карта внутри слайд-шоу ============================ */
 const Mini = (() => {
   const box = $('mini'), info = $('miniInfo');
-  let map = null, marker = null, ctx = null, visible = load('mini', false), current = null, ctxCount = -1;
+  let map = null, marker = null, loaded = false, visible = load('mini', false), current = null, ctxCount = -1;
   function ensure() {
-    if (map || !window.L) return;
-    map = L.map('miniMap', { zoomControl: true, attributionControl: true }).setView([30, 10], 2);
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-      { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(map);
-    ctx = L.layerGroup().addTo(map);
-    marker = L.circleMarker([0, 0], { radius: 9, color: '#e11d48', weight: 3, fillOpacity: .35 });
+    if (map || !hasMap) return;
+    map = new maplibregl.Map({ container: 'miniMap', style: BASEMAPS.osm.style, center: [10, 30], zoom: 1,
+      attributionControl: { compact: true }, maxZoom: 19 });
+    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
+    marker = new maplibregl.Marker({ color: '#e11d48' });
+    map.on('error', (e) => console.warn('Мини-карта:', e.error && e.error.message || e));
+    map.on('load', () => {
+      map.addSource('ctx', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addLayer({ id: 'ctx', type: 'circle', source: 'ctx', paint: { 'circle-radius': 3, 'circle-color': '#2563eb', 'circle-opacity': 0.7 } });
+      loaded = true; ctxCount = -1; drawContext();
+    });
   }
-  function drawContext() {   // остальные фото с геометками — серыми точками
+  function drawContext() {   // остальные фото с геометками — синими точками
     const pts = MapView.points;
-    if (pts.length === ctxCount) return; ctxCount = pts.length;
-    ctx.clearLayers();
-    const r = L.canvas();
-    for (const p of pts) L.circleMarker([p.lat, p.lon], { renderer: r, radius: 3, color: '#2563eb', weight: 1, fillOpacity: .6, interactive: false }).addTo(ctx);
+    if (!loaded || pts.length === ctxCount) return; ctxCount = pts.length;
+    map.getSource('ctx').setData({ type: 'FeatureCollection',
+      features: pts.map(p => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [p.lon, p.lat] } })) });
   }
   async function update(entry, file) {
     current = { entry, file };
@@ -606,17 +801,75 @@ const Mini = (() => {
     if (!current || current.entry !== entry) return;
     if (!g) { info.textContent = 'Нет геометки: ' + entry.name; marker.remove(); return; }
     info.textContent = `${entry.name}${g.date ? ' · ' + fmtExifDate(g.date) : ''}`;
-    marker.setLatLng([g.lat, g.lon]).addTo(map);
-    map.setView([g.lat, g.lon], Math.max(map.getZoom(), 13), { animate: true });
+    marker.setLngLat([g.lon, g.lat]).addTo(map);
+    map.easeTo({ center: [g.lon, g.lat], zoom: Math.max(map.getZoom(), 13), duration: 600 });
   }
   function toggle(force) {
     visible = force == null ? !visible : force; store('mini', visible);
     box.classList.toggle('on', visible);
-    if (visible && window.L) { ensure(); map.invalidateSize(); if (current) update(current.entry, current.file); }
+    if (visible && hasMap) { ensure(); map.resize(); if (current) update(current.entry, current.file); }
   }
   box.addEventListener('click', e => e.stopPropagation());
   box.addEventListener('wheel', e => e.stopPropagation(), { passive: true });
-  return { update, toggle, get visible() { return visible; }, sync: () => box.classList.toggle('on', visible) };
+  return { update, toggle, get visible() { return visible; },
+    sync: () => { box.classList.toggle('on', visible); if (visible && map) setTimeout(() => map.resize(), 0); } };
+})();
+
+/* ============================ галерея (плитка) ============================ */
+const Gallery = (() => {
+  const el = $('gallery'), grid = $('gGrid');
+  let list = [], io = null, big = false;
+  const sz = () => +$('gSize').value;
+  function observe() {
+    io && io.disconnect();
+    io = new IntersectionObserver((obs) => {
+      for (const o of obs) {
+        if (!o.isIntersecting) continue;
+        const t = o.target; io.unobserve(t);
+        const img = t.querySelector('img'), b = big;
+        Thumbs.get(list[+t.dataset.i], b).then(u => { if (u && big === b) { img.src = u; img.classList.add('ld'); } });
+      }
+    }, { root: grid, rootMargin: '400px 0px' });
+    grid.querySelectorAll('.tile').forEach(t => io.observe(t));
+  }
+  function open(entries, title) {
+    list = entries; big = sz() > 170;
+    $('gTitle').textContent = title; $('gCount').textContent = `${entries.length} фото`;
+    grid.innerHTML = '';
+    const frag = document.createDocumentFragment();
+    entries.forEach((e, i) => {
+      const t = document.createElement('div'); t.className = 'tile'; t.dataset.i = i; t.title = e.path;
+      const g = gpsMem.get(e.key);
+      t.innerHTML = `<img alt=""><span class="nm">${esc(e.name)}</span>` + (g ? '<button class="geo" title="Показать на карте">📍</button>' : '');
+      frag.appendChild(t);
+    });
+    grid.appendChild(frag); el.hidden = false; grid.scrollTop = 0;
+    observe();
+  }
+  function close() { el.hidden = true; io && io.disconnect(); grid.innerHTML = ''; list = []; }
+  grid.addEventListener('click', (ev) => {
+    const t = ev.target.closest('.tile'); if (!t) return;
+    const i = +t.dataset.i, e = list[i];
+    if (ev.target.closest('.geo')) { const g = gpsMem.get(e.key); close(); MapView.focus(g.lat, g.lon, e); return; }
+    // просмотр: тот же набор, с этой фотографии, на паузе — листать стрелками; Esc вернёт в галерею
+    lastShowAll = list;
+    Show.start({ list, startAt: i, paused: true, ...showOptions(), loop: true });
+  });
+  $('gPlay').onclick = () => {
+    const all = list, { mode, n } = modeOpts(), rebuild = () => buildPlaylist(all, mode, n);
+    lastShowAll = all;
+    Show.start({ list: rebuild(), rebuild: mode === 'order' ? null : rebuild, ...showOptions() });
+  };
+  $('gClose').onclick = close;
+  $('gSize').addEventListener('input', () => grid.style.setProperty('--gs', sz() + 'px'));
+  $('gSize').addEventListener('change', () => {           // перешли порог — перезагружаем миниатюры нужного размера
+    store('gsize', sz());
+    const nb = sz() > 170; if (nb === big || !list.length) return;
+    big = nb; grid.querySelectorAll('.tile img').forEach(im => { im.classList.remove('ld'); }); observe();
+  });
+  { const v = load('gsize', null); if (v) { $('gSize').value = v; grid.style.setProperty('--gs', v + 'px'); } }
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !el.hidden && !Show.open) close(); });
+  return { open, close, get isOpen() { return !el.hidden; } };
 })();
 
 /* ============================ слайд-шоу ============================ */
@@ -632,7 +885,7 @@ const Show = (() => {
       const e = list[i];
       const p = (async () => {
         const file = await e.getFile();
-        const url = URL.createObjectURL(file);
+        const url = URL.createObjectURL(await displayBlob(file));
         const im = new Image(); im.src = url;
         try { await im.decode(); return { url, file, ok: true }; }
         catch (err) { return { url, file, ok: false }; }
@@ -670,7 +923,7 @@ const Show = (() => {
     cap.textContent = '';
     if (showCap) {
       cap.textContent = `${e.path}\n${i + 1} / ${list.length}`;
-      exifr.parse(r.file, { pick: ['DateTimeOriginal'], reviveValues: false }).then(x => {
+      metaParse(r.file, { pick: ['DateTimeOriginal'], reviveValues: false }).then(x => {
         if (my === token && x && x.DateTimeOriginal) cap.textContent = `${e.path}  ·  ${fmtExifDate(x.DateTimeOriginal)}\n${i + 1} / ${list.length}`;
       }).catch(() => {});
     }
@@ -708,7 +961,7 @@ const Show = (() => {
   async function toMap() {
     const e = list[idx]; if (!e) return;
     const g = await readGps(e);
-    close();
+    close(); Gallery.close();
     if (!MapView.points.length) await scanGps();   // карта ещё не построена
     if (g) MapView.focus(g.lat, g.lon, e);
     else status(`У «${e.name}» нет геометки. Выберите на карте другое фото и нажмите «▶ Слайд-шоу отсюда».`);
@@ -756,13 +1009,28 @@ function showOptions() {
     caption: $('caption').checked, fade: $('fade').checked, loop: $('loop').checked,
   };
 }
-async function startShow(scope) {
+const SCOPE_TITLES = { checked: 'Отмеченные папки', all: 'Все папки', map: 'Видимая часть карты' };
+async function scopeEntries(scope) {
   saveSettings(); notice('');
-  let all;
   if (scope === 'map') {
-    all = MapView.visibleEntries();
-    if (!all.length) { notice(MapView.points.length ? 'В видимой части карты нет фото — отдалите карту.' : 'Сначала постройте карту: «Найти фото с геометками».'); return; }
-  } else { all = await collect(scope); if (!all) return; }
+    const all = MapView.visibleEntries();
+    if (!all.length) { notice(MapView.points.length ? 'В видимой части карты нет фото — отдалите карту.' : 'Сначала постройте карту: «Найти фото с геометками».'); return null; }
+    return all;
+  }
+  return collect(scope);
+}
+function scopeTitle(scope) {
+  if (scope !== 'selected') return SCOPE_TITLES[scope];
+  const s = selected && sources.find(x => x.id === selected.srcId);
+  return s ? s.name + (selected.path ? '/' + selected.path : '') : 'Выбранная папка';
+}
+async function openGallery(scope) {
+  const all = await scopeEntries(scope); if (!all) return;
+  status(`Файлов: ${all.length}`);
+  Gallery.open(all, scopeTitle(scope));
+}
+async function startShow(scope) {
+  const all = await scopeEntries(scope); if (!all) return;
   lastShowAll = all;
   const { mode, n } = modeOpts();
   const rebuild = () => buildPlaylist(all, mode, n);
@@ -771,102 +1039,153 @@ async function startShow(scope) {
   Show.start({ list, rebuild: mode === 'order' ? null : rebuild, ...showOptions() });
 }
 $('start').onclick = () => startShow(document.querySelector('input[name=scope]:checked').value);
+$('galleryBtn').onclick = () => openGallery(document.querySelector('input[name=scope]:checked').value);
 
-/* ============================ карта ============================ */
+/* ============================ карта (MapLibre GL) ============================ */
 const MapView = (() => {
-  if (!window.L || !L.markerClusterGroup) {
+  if (!hasMap) {
     notice('Не загрузилась библиотека карты (папка lib/ рядом с index.html?). Слайд-шоу работает, карта — нет.', true, true);
     return { setPoints() {}, focus() {}, visibleEntries: () => [], setLook() {}, map: null, points: [] };
   }
-  const map = L.map('map', { zoomControl: true, worldCopyJump: true }).setView([30, 10], 2);
-  const osm = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' });
-  const topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-    { maxZoom: 17, attribution: '&copy; OpenStreetMap, SRTM | &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (CC-BY-SA)' });
-  const sat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-    { maxZoom: 19, attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community' });
-  osm.addTo(map);
-  L.control.layers({ 'OpenStreetMap': osm, 'OpenTopoMap': topo, 'Спутник (Esri)': sat }).addTo(map);
-  L.control.scale({ imperial: false }).addTo(map);
+  let base = load('basemap', 'osm'); if (!BASEMAPS[base]) base = 'osm';
+  const map = new maplibregl.Map({ container: 'map', style: BASEMAPS[base].style, center: [10, 30], zoom: 1.5,
+    maxZoom: 20, attributionControl: { compact: true } });
+  map.addControl(new maplibregl.NavigationControl(), 'top-left');
+  map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
+  map.addControl({   // выбор подложки
+    onAdd() {
+      const d = document.createElement('div'); d.className = 'maplibregl-ctrl maplibregl-ctrl-group basectl';
+      d.innerHTML = `<select title="Подложка">${Object.entries(BASEMAPS).map(([k, v]) => `<option value="${k}" ${k === base ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}</select>`;
+      d.querySelector('select').onchange = (e) => setBase(e.target.value);
+      return d;
+    }, onRemove() {},
+  }, 'top-right');
+  map.on('error', (e) => console.warn('Карта:', e.error && e.error.message || e));
 
-  // Плотность: 1…10 → радиус объединения маркеров в кластер 117…5 px (меньше радиус — больше отдельных фото)
-  let density = 6, size = 52;
+  // Галерея по области: ▭ — нарисовать рамку, ▦ — всё, что видно на карте
+  let selMode = false, selBtn = null;
+  map.addControl({
+    onAdd() {
+      const d = document.createElement('div'); d.className = 'maplibregl-ctrl maplibregl-ctrl-group selctl';
+      d.innerHTML = '<button type="button" data-a="sel" title="Выделить область рамкой и открыть галерею (Esc — отмена)">▭</button>' +
+                    '<button type="button" data-a="vis" title="Галерея: все фото в видимой части карты">▦</button>';
+      selBtn = d.querySelector('[data-a=sel]');
+      selBtn.onclick = () => setSelMode(!selMode);
+      d.querySelector('[data-a=vis]').onclick = () => {
+        const all = visibleEntries();
+        if (!all.length) { notice(points.length ? 'В видимой части карты нет фото.' : 'Сначала постройте карту: «Найти фото с геометками».'); return; }
+        Gallery.open(all, 'Видимая часть карты');
+      };
+      return d;
+    }, onRemove() {},
+  }, 'top-right');
+  function setSelMode(on) {
+    selMode = on; selBtn && selBtn.classList.toggle('on', on);
+    map.getCanvas().style.cursor = on ? 'crosshair' : '';
+    on ? map.dragPan.disable() : map.dragPan.enable();
+  }
+  (() => {
+    const cont = map.getCanvasContainer(); let p0 = null, box = null;
+    const pos = (e) => { const r = cont.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    cont.addEventListener('pointerdown', (e) => {
+      if (!selMode || e.button !== 0) return;
+      p0 = pos(e); box = document.createElement('div'); box.className = 'selbox'; cont.appendChild(box);
+      cont.setPointerCapture(e.pointerId); e.preventDefault();
+    });
+    cont.addEventListener('pointermove', (e) => {
+      if (!box) return; const p = pos(e);
+      Object.assign(box.style, { left: Math.min(p.x, p0.x) + 'px', top: Math.min(p.y, p0.y) + 'px',
+        width: Math.abs(p.x - p0.x) + 'px', height: Math.abs(p.y - p0.y) + 'px' });
+    });
+    cont.addEventListener('pointerup', (e) => {
+      if (!box) return; const p = pos(e); box.remove(); box = null; setSelMode(false);
+      if (Math.abs(p.x - p0.x) < 6 || Math.abs(p.y - p0.y) < 6) return;      // случайный щелчок
+      const a = map.unproject([Math.min(p.x, p0.x), Math.max(p.y, p0.y)]), b = map.unproject([Math.max(p.x, p0.x), Math.min(p.y, p0.y)]);
+      const bounds = new maplibregl.LngLatBounds(a, b);
+      const sel = points.filter(q => bounds.contains([q.lon, q.lat])).map(q => q.entry);
+      if (!sel.length) { notice('В выделенной области нет фото.'); return; }
+      Gallery.open(sel, 'Область на карте');
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && selMode) { if (box) { box.remove(); box = null; } setSelMode(false); } });
+  })();
+
+  // Плотность: 1…10 → радиус объединения маркеров в группу 117…5 px (меньше радиус — больше отдельных фото)
+  let density = 6, size = 52, points = [], ready = false, popup = null, tempMarker = null;
+  const MAXCZ = 19;                                   // выше этого масштаба группы не строятся
   const radius = () => Math.round(5 + (10 - density) * 12.5);
-  const newCluster = () => L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: radius(), spiderfyOnMaxZoom: true });
-  let cluster = newCluster();
-  map.addLayer(cluster);
-  function setLook(d, sz) {
-    density = d; size = sz;
-    map.removeLayer(cluster); cluster = newCluster(); map.addLayer(cluster);
-    setPoints(points, { fit: false });
+  const geo = () => ({ type: 'FeatureCollection', features: points.map((p, i) => ({ type: 'Feature', properties: { i },
+    geometry: { type: 'Point', coordinates: [p.lon, p.lat] } })) });
+  function addLayers() {
+    if (map.getSource('photos')) return;
+    map.addSource('photos', { type: 'geojson', data: geo(), cluster: true, clusterRadius: radius(), clusterMaxZoom: MAXCZ,
+      clusterProperties: { first: ['min', ['get', 'i']] } });         // «обложка» группы — первое фото по порядку
+    // невидимый слой: нужен, чтобы MapLibre строил тайлы источника (их читает sync)
+    map.addLayer({ id: 'photos-hit', type: 'circle', source: 'photos', paint: { 'circle-radius': 1, 'circle-opacity': 0 } });
+    ready = true; clearMarkers();
   }
-  const visibleEntries = () => { const b = map.getBounds(); return points.filter(p => b.contains([p.lat, p.lon])).map(p => p.entry); };
-  let points = [];         // { lat, lon, date, entry }
-  let tempMarker = null;
+  map.on('style.load', addLayers);
+  function setBase(k) { base = k; store('basemap', k); ready = false; clearMarkers(); map.setStyle(BASEMAPS[k].style, { diff: false }); }
 
-  /* миниатюры: сначала встроенная в EXIF (быстро), иначе — уменьшение полного файла */
-  const thumbs = new Map();
-  let active = 0; const queue = [];
-  function thumb(entry) {
-    if (!thumbs.has(entry.key)) thumbs.set(entry.key, new Promise((res) => { queue.push({ entry, res }); pump(); }));
-    return thumbs.get(entry.key);
-  }
-  function pump() {
-    while (active < 3 && queue.length) {
-      const { entry, res } = queue.shift(); active++;
-      makeThumb(entry).then(res, () => res(null)).finally(() => { active--; pump(); });
+  const fillThumb = (el, i) => Thumbs.get(points[i].entry).then(url => { const img = el.querySelector('img'); if (url && img) img.src = url; });
+
+  /* HTML-маркеры только для того, что сейчас в тайлах источника (группы и одиночные фото) */
+  const markers = new Map();   // 'c<cluster_id>' | 'p<i>' -> maplibregl.Marker
+  function clearMarkers() { for (const m of markers.values()) m.remove(); markers.clear(); }
+  function sync() {
+    if (!ready || !map.getSource('photos') || !map.isSourceLoaded('photos')) return;
+    const seen = new Set();
+    for (const f of map.querySourceFeatures('photos')) {
+      const pr = f.properties, cl = !!pr.cluster;
+      const id = cl ? 'c' + pr.cluster_id : 'p' + pr.i;
+      if (seen.has(id)) continue; seen.add(id);
+      if (markers.has(id)) continue;
+      const el = document.createElement('div');
+      el.className = 'ph' + (cl ? ' clu' : ''); el.style.width = el.style.height = size + 'px';
+      el.innerHTML = '<img alt="">' + (cl ? `<span class="cnt">${pr.point_count_abbreviated}</span>` : '');
+      el.title = cl ? `${pr.point_count} фото` : points[pr.i].entry.path;
+      const idx = cl ? pr.first : pr.i;
+      if (points[idx]) fillThumb(el, idx);
+      el.addEventListener('click', (ev) => { ev.stopPropagation(); cl ? clusterClick(pr, f.geometry.coordinates) : openPopup(pr.i); });
+      const m = new maplibregl.Marker({ element: el }).setLngLat(f.geometry.coordinates).addTo(map);
+      markers.set(id, m);
     }
+    for (const [id, m] of markers) if (!seen.has(id)) { m.remove(); markers.delete(id); }
   }
-  async function makeThumb(entry) {
-    const file = await entry.getFile();
-    try {
-      const t = await exifr.thumbnail(file);
-      if (t && t.length) {
-        const bmp = await createImageBitmap(new Blob([t], { type: 'image/jpeg' }));
-        const o = await exifr.orientation(file).catch(() => 1);
-        return canvasUrl(bmp, 160, o);
-      }
-    } catch (e) {}
-    const bmp = await createImageBitmap(file);          // применяет EXIF-ориентацию сам
-    return canvasUrl(bmp, 160, 1);
-  }
-  async function canvasUrl(bmp, size, orient) {
-    const rot = orient === 6 || orient === 8 || orient === 5 || orient === 7;
-    const w0 = bmp.width, h0 = bmp.height, s = size / Math.max(w0, h0);
-    const w = Math.max(1, Math.round(w0 * s)), h = Math.max(1, Math.round(h0 * s));
-    const c = document.createElement('canvas'); c.width = rot ? h : w; c.height = rot ? w : h;
-    const g = c.getContext('2d');
-    g.translate(c.width / 2, c.height / 2);
-    if (orient === 3) g.rotate(Math.PI); else if (orient === 6) g.rotate(Math.PI / 2); else if (orient === 8) g.rotate(-Math.PI / 2);
-    g.drawImage(bmp, -w / 2, -h / 2, w, h); bmp.close && bmp.close();
-    const blob = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.8));
-    return URL.createObjectURL(blob);
+  map.on('render', sync);
+
+  async function clusterClick(pr, coords) {
+    const src = map.getSource('photos');
+    const z = await src.getClusterExpansionZoom(pr.cluster_id);
+    if (z <= MAXCZ && z <= map.getMaxZoom()) { map.easeTo({ center: coords, zoom: z + 0.01 }); return; }
+    // группа не раскрывается зумом (снимки из одной точки) — галерея
+    const leaves = await src.getClusterLeaves(pr.cluster_id, 300, 0);
+    const box = document.createElement('div'); box.className = 'gal';
+    box.innerHTML = `<div class="row"><b class="grow">${pr.point_count} фото в этой точке</b><button data-a="gal">▦ В галерее</button></div><div class="grid">` +
+      leaves.map(l => `<div class="ph" data-i="${l.properties.i}" title="${esc(points[l.properties.i].entry.path)}"><img alt=""></div>`).join('') + '</div>';
+    box.querySelectorAll('[data-i]').forEach(el => { fillThumb(el, +el.dataset.i); el.onclick = () => openPopup(+el.dataset.i); });
+    box.querySelector('[data-a=gal]').onclick = () => Gallery.open(leaves.map(l => l.properties.i).sort((x, y) => x - y).map(i => points[i].entry), `${pr.point_count} фото в одной точке`);
+    if (popup) popup.remove();
+    popup = new maplibregl.Popup({ maxWidth: '340px', offset: size / 2 }).setLngLat(coords).setDOMContent(box).addTo(map);
   }
 
-  function makeMarker(p, i) {
-    const m = L.marker([p.lat, p.lon], { icon: L.divIcon({ className: '', html: `<div class="ph" style="width:${size}px;height:${size}px"><img alt=""></div>`, iconSize: [size, size], iconAnchor: [size / 2, size / 2] }) });
-    m.on('add', () => {
-      thumb(p.entry).then(url => { const img = m.getElement() && m.getElement().querySelector('img'); if (url && img) img.src = url; });
-    });
-    m._pIndex = i;
-    m.bindPopup(() => popupHtml(p, i), { maxWidth: 320, minWidth: 200 });
-    m.on('popupopen', (ev) => {
-      const box = ev.popup.getElement();
-      thumb(p.entry).then(url => { const img = box.querySelector('img'); if (url && img) img.src = url; });
-      // крупное превью из оригинала
-      p.entry.getFile().then(f => { const img = box.querySelector('img'); const u = URL.createObjectURL(f); img.onload = null; img.src = u; ev.popup.once('remove', () => URL.revokeObjectURL(u)); }).catch(() => {});
-      box.querySelector('[data-a=show]').onclick = () => startFrom(i, false);
-      box.querySelector('[data-a=open]').onclick = () => startFrom(i, true);
-    });
-    return m;
-  }
   function popupHtml(p) {
-    return `<div class="pop"><img alt=""><b>${esc(p.entry.name)}</b>
+    return `<img alt=""><b>${esc(p.entry.name)}</b>
       <div class="p">${esc(p.entry.path)}</div>
       <div class="p">${p.date ? '📅 ' + esc(fmtExifDate(p.date)) + ' · ' : ''}${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}</div>
-      <div class="row"><button data-a="open">🔍 Открыть</button><button data-a="show">▶ Слайд-шоу отсюда</button></div></div>`;
+      <div class="row"><button data-a="open">🔍 Открыть</button><button data-a="show">▶ Слайд-шоу отсюда</button></div>`;
   }
-  // «Слайд-шоу отсюда»: весь набор папок (включая фото без геометок), начиная с выбранного, в текущем режиме
+  function openPopup(i) {
+    const p = points[i]; if (!p) return;
+    if (popup) popup.remove();
+    const box = document.createElement('div'); box.className = 'pop'; box.innerHTML = popupHtml(p);
+    fillThumb(box, i);
+    let url = null;
+    p.entry.getFile().then(displayBlob).then(b => { url = URL.createObjectURL(b); box.querySelector('img').src = url; }).catch(() => {});   // крупное превью
+    box.querySelector('[data-a=show]').onclick = () => startFrom(i, false);
+    box.querySelector('[data-a=open]').onclick = () => startFrom(i, true);
+    popup = new maplibregl.Popup({ maxWidth: '320px', offset: size / 2 + 2 }).setLngLat([p.lon, p.lat]).setDOMContent(box).addTo(map);
+    popup.on('close', () => { if (url) URL.revokeObjectURL(url); });
+  }
   // Если фото есть в наборе прерванного слайд-шоу — продолжаем его, иначе берём набор карты
   function startFrom(i, paused) {
     const key = points[i].entry.key;
@@ -879,20 +1198,30 @@ const MapView = (() => {
 
   function setPoints(pts, { fit = true } = {}) {
     points = pts;
-    cluster.clearLayers();
-    cluster.addLayers(pts.map(makeMarker));
-    if (fit && pts.length) map.fitBounds(L.latLngBounds(pts.map(p => [p.lat, p.lon])).pad(0.1), { maxZoom: 15 });
-  }
-  function focus(lat, lon, entry) {
-    if (tempMarker) map.removeLayer(tempMarker);
-    const k = points.findIndex(p => p.entry.key === entry.key);
-    if (k >= 0) {   // фото уже на карте — раскрываем кластер и открываем его карточку
-      const m = cluster.getLayers().find(l => l._pIndex === k);
-      if (m) { cluster.zoomToShowLayer(m, () => m.openPopup()); return; }
+    if (popup) popup.remove();
+    clearMarkers();
+    const src = map.getSource('photos'); if (src) src.setData(geo());
+    if (fit && pts.length) {
+      const b = new maplibregl.LngLatBounds();
+      for (const p of pts) b.extend([p.lon, p.lat]);
+      map.fitBounds(b, { padding: 50, maxZoom: 15, duration: 0 });
     }
-    tempMarker = L.circleMarker([lat, lon], { radius: 10, color: '#e11d48', weight: 3, fillOpacity: 0.2 }).addTo(map)
-      .bindPopup(esc(entry.path)).openPopup();
-    map.setView([lat, lon], 15);
+  }
+  function setLook(d, sz) {
+    density = d; size = sz;
+    const src = map.getSource('photos');
+    if (src) src.setClusterOptions({ cluster: true, clusterRadius: radius(), clusterMaxZoom: MAXCZ });
+    clearMarkers();
+  }
+  const visibleEntries = () => { const b = map.getBounds(); return points.filter(p => b.contains([p.lon, p.lat])).map(p => p.entry); };
+  function focus(lat, lon, entry) {
+    if (tempMarker) { tempMarker.remove(); tempMarker = null; }
+    map.jumpTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 16) });
+    const k = points.findIndex(p => p.entry.key === entry.key);
+    if (k >= 0) { openPopup(k); return; }
+    tempMarker = new maplibregl.Marker({ color: '#e11d48' }).setLngLat([lon, lat]).addTo(map);
+    if (popup) popup.remove();
+    popup = new maplibregl.Popup({ offset: 30 }).setLngLat([lon, lat]).setText(entry.path).addTo(map);
   }
   return { setPoints, focus, visibleEntries, setLook, map, get points() { return points; } };
 })();
@@ -916,7 +1245,7 @@ async function scanGps({ fit = true } = {}) {
         let v = await DB.get('meta', ck);
         if (v) fromCache++;
         else {
-          const x = await exifr.parse(f, { tiff: true, ifd0: { pick: ['Orientation'] }, exif: { pick: ['DateTimeOriginal'] }, gps: true,
+          const x = await metaParse(f, { tiff: true, ifd0: { pick: ['Orientation'] }, exif: { pick: ['DateTimeOriginal'] }, gps: true,
             ifd1: false, xmp: false, icc: false, iptc: false, jfif: false, interop: false, reviveValues: false }).catch(() => null);
           const lat = x && x.latitude, lon = x && x.longitude;
           const ok = Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0) && Math.abs(lat) <= 90 && Math.abs(lon) <= 180;
@@ -947,13 +1276,14 @@ $('clearCache').onclick = async () => { await DB.clear('meta').catch(() => {}); 
 function saveSettings() {
   store('settings', {
     scope: document.querySelector('input[name=scope]:checked').value, mode: document.querySelector('input[name=mode]:checked').value,
-    density: $('density').value, thumbSize: $('thumbSize').value,
+    density: $('density').value, thumbSize: $('thumbSize').value, rawSkip: $('rawSkip').checked,
     nth: $('nth').value, interval: $('interval').value, caption: $('caption').checked, fade: $('fade').checked, loop: $('loop').checked,
   });
 }
 (function restore() {
   const s = load('settings', null); if (!s) return;
   const sc = document.querySelector(`input[name=scope][value="${s.scope}"]`); if (sc) sc.checked = true;
+  $('rawSkip').checked = s.rawSkip !== false;
   if (s.density) $('density').value = s.density; if (s.thumbSize) $('thumbSize').value = s.thumbSize;
   const r = document.querySelector(`input[name=mode][value="${s.mode}"]`); if (r) r.checked = true;
   if (s.nth) $('nth').value = s.nth; if (s.interval) $('interval').value = s.interval;
