@@ -246,7 +246,7 @@
 <aside>
   <header class="top">
     <h1>letseetheworld <span style="font-weight:500">PhotoViewer</span></h1>
-    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-22.4</span>
+    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-22.5</span>
   </header>
 
   <section class="card">
@@ -1076,7 +1076,7 @@ async function collectFresh(scope) {
     } catch (e) { notice(`Ошибка чтения «${src.name}»: ${e.message}`, true); return null; }
   }
   if (!all.length) { notice('В выбранных папках нет изображений.'); return null; }
-  return all;
+  return linkTwins(all);                                        // двойники RAW↔JPG и между разными папками
 }
 
 /* ============================ режимы ============================ */
@@ -1282,13 +1282,27 @@ async function ensureMeta(list, onProgress) {
 }
 // RAW + JPG/HEIC с тем же именем в той же папке — «двойники»: у RAW берём геометку/дату/камеру JPG,
 // миниатюру JPG, а если RAW не проявляется — показываем JPG
+// Сначала ищем в той же папке; если нет — по всем подключённым папкам (частая раскладка: RAW/ отдельно от JPG).
+// Несколько файлов с таким именем — берём из самой «близкой» по пути папки.
 function linkTwins(list) {
-  const plain = new Map();
+  const byDir = new Map(), byName = new Map();
   for (const e of list) if (!RAW_RE.test(e.name) && !isVideo(e)) {
-    const k = e.dir + '/' + baseName(e.name), cur = plain.get(k);
-    if (!cur || /\.jpe?g$/i.test(e.name)) plain.set(k, e);            // JPG приоритетнее HEIC/PNG
+    const b = baseName(e.name), k = e.srcId + '|' + e.dir + '/' + b, cur = byDir.get(k);
+    if (!cur || /\.jpe?g$/i.test(e.name)) byDir.set(k, e);            // JPG приоритетнее HEIC/PNG
+    if (!byName.has(b)) byName.set(b, []);
+    byName.get(b).push(e);
   }
-  for (const e of list) if (RAW_RE.test(e.name)) { const t = plain.get(e.dir + '/' + baseName(e.name)); if (t) e.twin = t; }
+  const common = (a, b) => { const x = a.split('/'), y = b.split('/'); let i = 0; while (i < x.length && i < y.length && x[i] === y[i]) i++; return i; };
+  for (const e of list) if (RAW_RE.test(e.name) && !e.twin) {
+    const b = baseName(e.name);
+    let t = byDir.get(e.srcId + '|' + e.dir + '/' + b);
+    if (!t) {
+      const c = byName.get(b) || [];
+      let best = -1;
+      for (const x of c) { const sc = common(e.path, x.path) * 2 + (/\.jpe?g$/i.test(x.name) ? 1 : 0); if (sc > best) { best = sc; t = x; } }
+    }
+    if (t) e.twin = t;
+  }
   return list;
 }
 const mergeTwin = (v, t) => t ? Object.assign({}, v, {
