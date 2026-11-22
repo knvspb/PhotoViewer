@@ -131,6 +131,16 @@
   #place.on { opacity: 1; }
   #place small { display: block; font-size: .5em; font-weight: 500; opacity: .9; }
   #favBtn.on { color: #ffd54a; }
+  #show:not(.has-twin) .twinonly { display: none; }
+  #rawBadge { position: absolute; top: 56px; right: 16px; padding: 4px 14px; border-radius: 8px; background: rgba(0,0,0,.35); color: rgba(255,255,255,.75);
+              border: 1px solid rgba(255,255,255,.35); text-shadow: 0 1px 3px rgba(0,0,0,.6);
+              font: 800 clamp(18px, 2.6vw, 36px)/1.2 system-ui, sans-serif; letter-spacing: .06em; display: none; pointer-events: none; }
+  #rawBadge.on { display: block; }
+  #rawBadge small { display: block; font-size: .42em; font-weight: 600; letter-spacing: 0; opacity: .9; }
+  #twinBox { position: absolute; right: 16px; bottom: 40px; width: min(24vw, 360px); opacity: .9; background: #111; border: 2px solid rgba(255,255,255,.6);
+             border-radius: 8px; overflow: hidden; box-shadow: 0 6px 24px rgba(0,0,0,.6); cursor: pointer; }
+  #twinBox img { position: static; inset: auto; opacity: 1; transition: none; transform: none; display: block; width: 100%; height: auto; max-height: 40vh; object-fit: contain; background: #000; }
+  #twinBox .tb-l { padding: 2px 8px; color: #ccc; font-size: 11px; background: rgba(0,0,0,.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .tile .fav { position: absolute; top: 4px; left: 4px; padding: 0 4px; font-size: 14px; background: rgba(0,0,0,.55); border: 0; color: #fff; border-radius: 4px; opacity: 0; }
   .tile:hover .fav, .tile .fav.on { opacity: 1; } .tile .fav.on { color: #ffd54a; }
   #osd { position: absolute; top: 14px; right: 16px; color: #fff; font-size: 13px; background: rgba(0,0,0,.55);
@@ -246,7 +256,7 @@
 <aside>
   <header class="top">
     <h1>letseetheworld <span style="font-weight:500">PhotoViewer</span></h1>
-    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-22.6</span>
+    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-22.8</span>
   </header>
 
   <section class="card">
@@ -311,6 +321,9 @@
         <label class="chip" title="Путь и дата съёмки внизу кадра"><input type="checkbox" id="caption" checked>Подпись</label>
         <label class="chip" title="Плавная смена кадров"><input type="checkbox" id="fade" checked>Плавно</label>
         <label class="chip" title="После последнего — снова с начала"><input type="checkbox" id="loop" checked>По кругу</label>
+        <label class="chip" title="Крупный значок RAW в углу кадра, когда показан RAW-файл"><input type="checkbox" id="rawBadgeOn">Значок RAW</label>
+        <label class="chip" title="Номер фото в его исходной папке: «в папке 12 / 340»"><input type="checkbox" id="cntDir">№ в папке</label>
+        <label class="chip" title="Номер фото во всём наборе показа (по сортировке): «в наборе 512 / 5578» — полезно при случайном порядке"><input type="checkbox" id="cntAll">№ в наборе</label>
         <label class="chip" title="Крупная подпись «город — дата»: город определяется по геометке через OpenStreetMap (Nominatim)"><input type="checkbox" id="placeOn">Город и дата</label>
       </div>
     </div></div>
@@ -324,7 +337,7 @@
         <kbd>↑</kbd><kbd>↓</kbd> по порядку показа (в просмотре — соседние фото во всех папках) · <kbd>←</kbd><kbd>→</kbd> соседние фото на карте · <kbd>Пробел</kbd> пауза ·
         <kbd>+</kbd><kbd>−</kbd> интервал · <kbd>S</kbd> настройки · <kbd>I</kbd> подпись · <kbd>G</kbd> мини-карта · <kbd>M</kbd> к карте ·
         <kbd>Ctrl</kbd>+колесо — увеличить, <kbd>Ctrl</kbd>+мышь — двигать, <kbd>0</kbd> — сброс ·
-        <kbd>Ctrl</kbd>+<kbd>←</kbd><kbd>→</kbd> поворот (без сохранения) · <kbd>L</kbd> избранное · <kbd>F</kbd> полный экран · <kbd>Пробел</kbd> в просмотре — слайд-шоу отсюда · <kbd>Esc</kbd> выход (из галереи — обратно в неё)
+        <kbd>Ctrl</kbd>+<kbd>←</kbd><kbd>→</kbd> поворот (без сохранения) · <kbd>L</kbd> избранное · <kbd>J</kbd> связанный RAW/JPG · <kbd>F</kbd> полный экран · <kbd>Пробел</kbd> в просмотре — слайд-шоу отсюда · <kbd>Esc</kbd> выход (из галереи — обратно в неё)
       </div>
     </details>
   </section>
@@ -376,8 +389,8 @@
     </div>
     <div class="kv">
       <span>Миниатюры</span>
-      <select id="thumbSize"><option value="36">мелкие</option><option value="52" selected>средние</option><option value="72">крупные</option></select>
-      <span></span>
+      <input type="range" id="thumbSize" min="24" max="140" step="4" value="52">
+      <span id="thumbVal" class="hint"></span>
     </div>
     <div class="kv" title="Группы фото показываются кружком с числом; при достаточном приближении — миниатюрой первого фото">
       <span>Группы</span>
@@ -422,9 +435,11 @@
 
 <div id="show">
   <img id="imgA" alt="" referrerpolicy="no-referrer"><img id="imgB" alt="" referrerpolicy="no-referrer"><video id="vid" playsinline controls preload="auto"></video>
+  <div id="rawBadge"></div>
+  <div id="twinBox" hidden><img alt="" referrerpolicy="no-referrer"><div class="tb-l"></div></div>
   <div id="place"></div><div id="cap"></div><div id="osd"></div><div id="bar"></div>
   <div id="showPanel" hidden><div class="sp-h"><b>Настройки показа</b><span class="grow"></span><button data-a="opts" title="Закрыть (S)">✕</button></div></div>
-  <div id="tools"><button data-a="mini" title="Мини-карта (G)">📍 Мини-карта</button><button data-a="map" title="Прервать и перейти к карте (M)">🗺 К карте</button><button data-a="play" class="viewonly" title="Слайд-шоу с этого фото (Пробел)">▶ Слайд-шоу отсюда</button><button data-a="pause" class="showonly" title="Пауза (Пробел)">⏯</button><button data-a="opts" title="Настройки показа (S)">⚙</button><button data-a="fav" id="favBtn" title="В избранное (L)">☆</button><button data-a="close" title="Выход (Esc)">✕</button></div>
+  <div id="tools"><button data-a="mini" title="Мини-карта (G)">📍 Мини-карта</button><button data-a="map" title="Прервать и перейти к карте (M)">🗺 К карте</button><button data-a="play" class="viewonly" title="Слайд-шоу с этого фото (Пробел)">▶ Слайд-шоу отсюда</button><button data-a="pause" class="showonly" title="Пауза (Пробел)">⏯</button><button data-a="opts" title="Настройки показа (S)">⚙</button><button data-a="fav" id="favBtn" title="В избранное (L)">☆</button><button data-a="twinPeek" class="twinonly" id="twinPeekBtn" title="Связанный файл с тем же именем — в уголке (J); щелчок по нему — перейти">⇄ JPG</button><button data-a="close" title="Выход (Esc)">✕</button></div>
   <div id="mini"><div id="miniMap"></div>
     <div id="miniBar"><span id="miniInfo"></span><button data-a="map" title="Прервать показ и открыть большую карту на этом фото">🗺 Перейти к карте</button><button data-a="mini" title="Скрыть (G)">✕</button></div></div>
 </div>
@@ -1301,7 +1316,7 @@ function linkTwins(list) {
       let best = -1;
       for (const x of c) { const sc = common(e.path, x.path) * 2 + (/\.jpe?g$/i.test(x.name) ? 1 : 0); if (sc > best) { best = sc; t = x; } }
     }
-    if (t) e.twin = t;
+    if (t) { e.twin = t; t.rawTwin = e; }                        // и обратная ссылка: JPG → RAW
   }
   return list;
 }
@@ -2057,19 +2072,69 @@ const Show = (() => {
       shown = e; dims = { w: r.w, h: r.h }; curR = r; resetZoom(); applyT(next);
       next.src = r.url; next.classList.add('on'); prev.classList.remove('on'); cur ^= 1;
     }
-    cap.textContent = '';
+    capS = { path: e.path, date: '', note, extra: '' }; paintCap();
     if (showCap) {
-      cap.textContent = `${e.path}\n${note}`;
       (metaMem.has(e.key) || !r.file ? Promise.resolve(metaMem.get(e.key) && { DateTimeOriginal: metaMem.get(e.key).date })
         : metaParse(r.file, META_OPTS).then(x => { const v = metaFrom(x); remember(e, v); return { DateTimeOriginal: v.date }; })).then(x => {
-        if (my === token && x && x.DateTimeOriginal) cap.textContent = `${e.path}  ·  ${fmtExifDate(x.DateTimeOriginal)}\n${note}`;
+        if (my === token && x && x.DateTimeOriginal) { capS.date = fmtExifDate(x.DateTimeOriginal); paintCap(); }
       }).catch(() => {});
+      counters(e, my);
     }
+    // значок RAW и связанный файл (RAW ↔ JPG с тем же именем)
+    const isRaw = RAW_RE.test(e.name), tw = e.twin || e.rawTwin;
+    $('rawBadge').classList.toggle('on', isRaw && $('rawBadgeOn').checked);
+    $('rawBadge').innerHTML = isRaw ? 'RAW' + (r.twinUsed ? '<small>показан JPG с тем же именем</small>' : '') : '';
+    el.classList.toggle('has-twin', !!tw);
+    if (tw) {
+      const w = RAW_RE.test(tw.name) ? 'RAW' : 'JPG';
+      $('twinPeekBtn').textContent = `⇄ ${w}`;
+      $('twinPeekBtn').title = `${tw.path} — показать в уголке (J); щелчок по нему — перейти (фильтры сбрасываются)`;
+    }
+    if (twinOpen && tw) peekTwin(true); else $('twinBox').hidden = true;
     Mini.update(e, r.file);
     $('favBtn').classList.toggle('on', Fav.has(e)); $('favBtn').textContent = Fav.has(e) ? '★' : '☆';
     showPlace(e, r.file, my);
     return r;
   }
+  // Подпись: путь · дата / номер в показе · в наборе · в папке
+  let capS = { path: '', date: '', note: '', extra: '' };
+  function paintCap() {
+    if (!showCap) { cap.textContent = ''; return; }
+    cap.textContent = `${capS.path}${capS.date ? '  ·  ' + capS.date : ''}\n${capS.note}${capS.extra}`;
+  }
+  // № в наборе (по сортировке) и № в исходной папке (все файлы папки, без фильтров)
+  const dirIdx = new WeakMap();
+  async function counters(e, my) {
+    const parts = [];
+    if ($('cntAll').checked && base.length > 1) { const k = base.findIndex(x => x.key === e.key); if (k >= 0) parts.push(`в наборе ${k + 1} / ${base.length}`); }
+    if ($('cntDir').checked) {
+      const all = await collect('all', { cached: true, nofilter: true }).catch(() => null);
+      if (all) {
+        let m = dirIdx.get(all);
+        if (!m) { m = new Map(); const by = new Map(); for (const x of all) { const d = x.srcId + '|' + x.dir; if (!by.has(d)) by.set(d, []); by.get(d).push(x); } for (const arr of by.values()) arr.forEach((x, i) => m.set(x.key, [i + 1, arr.length])); dirIdx.set(all, m); }
+        const p = m.get(e.key); if (p) parts.push(`в папке «${e.dir.split('/').pop() || sources.find(s => s.id === e.srcId)?.name || ''}» ${p[0]} / ${p[1]}`);
+      }
+    }
+    if (my !== token) return;
+    capS.extra = parts.length ? '  ·  ' + parts.join('  ·  ') : ''; paintCap();
+  }
+  // Связанный файл: показать в уголке / перейти к нему
+  let twinOpen = false;
+  async function peekTwin(force) {
+    const e = shown, tw = e && (e.twin || e.rawTwin), box = $('twinBox');
+    twinOpen = force != null ? force : box.hidden;
+    if (!twinOpen || !tw) { box.hidden = true; return; }
+    box.hidden = false; box.querySelector('.tb-l').textContent = tw.name + '  ·  открыть →'; box.title = tw.path;
+    const img = box.querySelector('img'); img.removeAttribute('src');
+    const u = await Thumbs.get(tw, true); if (shown === e && u) img.src = u;
+  }
+  function goTwin() {
+    const tw = shown && (shown.twin || shown.rawTwin); if (!tw) return;
+    if (filterActive() || !flt.fmt.jpg || !flt.fmt.raw) $('fltReset').click();    // фильтры сбрасываются, иначе файл может быть скрыт
+    view(tw);
+  }
+  $('twinBox').addEventListener('click', (ev) => { ev.stopPropagation(); goTwin(); });
+
   // Крупная подпись «Город — дата»
   async function showPlace(e, file, my) {
     const el2 = $('place'); el2.classList.remove('on');
@@ -2198,7 +2263,7 @@ const Show = (() => {
     const so = JSON.stringify(sortOpts());
     if (so !== curSort) { curSort = so; if (viewMode) { view(shown || list[idx]); return; } playFromHere(); return; }   // новая сортировка
     if (!viewMode && scopeNow() !== curScope) { playFromHere(); return; }   // сменили набор — пересобираем с текущего фото
-    if (shown) showPlace(shown, curR && curR.file, token);
+    if (shown) { showPlace(shown, curR && curR.file, token); counters(shown, token); $('rawBadge').classList.toggle('on', RAW_RE.test(shown.name) && $('rawBadgeOn').checked); }
     if (viewMode) { schedule(); return; }
     el.style.setProperty('--fade', o.fade ? '.6s' : '0s');
     if (o.caption !== showCap) { showCap = o.caption; cap.hidden = !showCap; }
@@ -2216,7 +2281,7 @@ const Show = (() => {
       flash(mode === 'smart' ? `Умный: ${g.uniques.length} уникальных из ${base.length}${n > 1 ? `, шаг ≈ ${n}` : ''}`
         : { order: 'Порядок: подряд', random: 'Порядок: случайно', nth: `Порядок: шаг ≈ ${n}` }[mode]);
       const note = `${idx + 1} / ${list.length}`;
-      if (showCap) cap.textContent = cap.textContent.replace(/\n.*$/, '\n' + note);
+      capS.note = note; paintCap(); if (shown) counters(shown, token);
     }
     schedule();
   }
@@ -2225,6 +2290,7 @@ const Show = (() => {
     open = false; token++; clearTimeout(timer); el.classList.remove('open'); stopVideo();
     dropCache(); walk = null; shown = null;
     imgs.forEach(im => { im.removeAttribute('src'); im.classList.remove('on'); im.style.transform = ''; });
+    $('twinBox').hidden = true; twinOpen = false; $('rawBadge').classList.remove('on');
     resetZoom();
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   }
@@ -2292,6 +2358,8 @@ const Show = (() => {
     else if (a === 'opts') togglePanel();
     else if (a === 'play') playFromHere();
     else if (a === 'fav') toggleFav();
+    else if (a === 'twinPeek') peekTwin();
+
   }));
 
   document.addEventListener('keydown', (ev) => {
@@ -2319,6 +2387,7 @@ const Show = (() => {
     else if (k === 'g' || k === 'G' || k === 'п' || k === 'П') Mini.toggle();
     else if (k === 's' || k === 'S' || k === 'ы' || k === 'Ы') togglePanel();
     else if (k === 'l' || k === 'L' || k === 'д' || k === 'Д') toggleFav();
+    else if (k === 'j' || k === 'J' || k === 'о' || k === 'О') peekTwin();
     else if (k === 'f' || k === 'F' || k === 'а' || k === 'А') { document.fullscreenElement ? document.exitFullscreen() : el.requestFullscreen().catch(() => {}); }
     else return;
     ev.preventDefault();
@@ -2432,7 +2501,11 @@ const MapView = (() => {
     onAdd() {
       const d = document.createElement('div'); d.className = 'maplibregl-ctrl maplibregl-ctrl-group selctl';
       d.innerHTML = '<button type="button" data-a="sel" title="Выделить область рамкой и открыть галерею (Esc — отмена)">▭</button>' +
-                    '<button type="button" data-a="vis" title="Галерея: все фото в видимой части карты">▦</button>';
+                    '<button type="button" data-a="vis" title="Галерея: все фото в видимой части карты">▦</button>' +
+                    '<button type="button" data-a="big" title="Миниатюры крупнее (до перезагрузки; постоянный размер — в настройках «Карта»)">⊕</button>' +
+                    '<button type="button" data-a="small" title="Миниатюры мельче (до перезагрузки)">⊖</button>';
+      d.querySelector('[data-a=big]').onclick = () => setLook(density, Math.min(200, size + 12));
+      d.querySelector('[data-a=small]').onclick = () => setLook(density, Math.max(20, size - 12));
       selBtn = d.querySelector('[data-a=sel]');
       selBtn.onclick = () => setSelMode(!selMode);
       d.querySelector('[data-a=vis]').onclick = () => {
@@ -2633,7 +2706,7 @@ $('clearCache').onclick = async () => { await DB.clear('meta').catch(() => {}); 
 function saveSettings() {
   store('settings', {
     scope: document.querySelector('input[name=scope]:checked').value, mode: document.querySelector('input[name=mode]:checked').value,
-    simThr: $('simThr').value, auto: $('auto').checked, placeOn: $('placeOn').checked, sortBy: sortOpts().by, sortDir: sortOpts().dir, density: $('density').value, thumbSize: $('thumbSize').value, coverZoom: $('coverZoom').value, rawSkip: $('rawSkip').checked,
+    simThr: $('simThr').value, rawBadgeOn: $('rawBadgeOn').checked, cntDir: $('cntDir').checked, cntAll: $('cntAll').checked, auto: $('auto').checked, placeOn: $('placeOn').checked, sortBy: sortOpts().by, sortDir: sortOpts().dir, density: $('density').value, thumbSize: $('thumbSize').value, coverZoom: $('coverZoom').value, rawSkip: $('rawSkip').checked,
     nth: $('nth').value, interval: $('interval').value, caption: $('caption').checked, fade: $('fade').checked, loop: $('loop').checked,
   });
 }
@@ -2646,6 +2719,7 @@ function saveSettings() {
   $('auto').checked = s.auto !== false;
   if (s.simThr) { $('simThr').value = s.simThr; $('simThr').dispatchEvent(new Event('input')); }
   $('placeOn').checked = !!s.placeOn;
+  $('rawBadgeOn').checked = !!s.rawBadgeOn; $('cntDir').checked = !!s.cntDir; $('cntAll').checked = !!s.cntAll;
   for (const [n, v] of [['sortBy', s.sortBy], ['sortDir', s.sortDir]]) { const r = v && document.querySelector(`input[name=${n}][value="${v}"]`); if (r) r.checked = true; } if (s.thumbSize) $('thumbSize').value = s.thumbSize;
   const r = document.querySelector(`input[name=mode][value="${s.mode}"]`); if (r) r.checked = true;
   if (s.nth) $('nth').value = s.nth; if (s.interval) $('interval').value = s.interval;
@@ -2656,11 +2730,13 @@ $('playOpts').addEventListener('change', () => Show.applySettings());
 function applyLook() {
   const d = +$('density').value;
   $('densityVal').textContent = d >= 9 ? 'максимум' : d <= 2 ? 'минимум' : 'средне';
+  $('thumbVal').textContent = $('thumbSize').value + ' px';
   MapView.setLook(d, +$('thumbSize').value, +$('coverZoom').value);
 }
 $('density').addEventListener('input', () => { $('densityVal').textContent = '…'; });
 $('density').addEventListener('change', applyLook);
 $('thumbSize').addEventListener('change', applyLook);
+$('thumbSize').addEventListener('input', () => { $('thumbVal').textContent = $('thumbSize').value + ' px'; });
 $('coverZoom').addEventListener('change', applyLook);
 applyLook();
 
