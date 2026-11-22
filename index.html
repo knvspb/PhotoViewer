@@ -59,6 +59,14 @@
   details.more summary { font-size: 12px; color: var(--muted); cursor: pointer; }
   details.more[open] summary { margin-bottom: 4px; }
   #playOpts:not(:has(input[name=scope][value=selected]:checked)) .sel-l { display: none; }
+  /* строки настроек показа: подпись слева, переключатели справа */
+  .orow { display: grid; grid-template-columns: 62px minmax(0, 1fr); align-items: center; gap: 6px; margin-top: 6px; }
+  .orow .seg label { padding: 4px 5px; font-size: 11.5px; }
+  .orow input[type=number].inl { width: 34px; }
+  .orow > span { font-size: 11px; color: var(--muted); }
+  .orow .chips { margin-top: 0; }
+  .seg.corner label { padding: 1px 5px; font-size: 11px; }
+  .sel-l { margin-left: 68px; }
   #playOpts:not(:has(#auto:checked)) .chip:has(#interval) { opacity: .45; }
   #playOpts:not(:has(input[name=mode][value=smart]:checked)) .smartonly { display: none; }
   #playOpts:not(:has(input[name=mode][value=nth]:checked)):not(:has(input[name=mode][value=smart]:checked)) .nlab { opacity: .45; }
@@ -140,6 +148,16 @@
               border: 1px solid rgba(255,255,255,.35); text-shadow: 0 1px 3px rgba(0,0,0,.6);
               font: 800 clamp(18px, 2.6vw, 36px)/1.2 system-ui, sans-serif; letter-spacing: .06em; display: none; pointer-events: none; }
   #rawBadge.on { display: block; }
+  #metaBox { position: absolute; top: 56px; right: 16px; width: min(400px, 42vw); max-height: calc(100vh - 230px); overflow: auto;
+             background: rgba(0,0,0,.5); color: #eee; border: 1px solid rgba(255,255,255,.2); border-radius: 8px; padding: 6px 8px;
+             font: 12px/1.35 system-ui, sans-serif; backdrop-filter: blur(2px); cursor: default; }
+  #metaBox table { border-collapse: collapse; width: 100%; }
+  #metaBox th { text-align: left; font-weight: 500; color: rgba(255,255,255,.6); padding: 2px 8px 2px 0; white-space: nowrap; vertical-align: top; width: 1%; }
+  #metaBox td { padding: 2px 0; word-break: break-word; }
+  #metaBox tr.sep th { padding-top: 6px; color: rgba(255,255,255,.85); font-weight: 700; }
+  #metaBox details summary { cursor: pointer; color: rgba(255,255,255,.7); margin-top: 6px; }
+  #rawBadge.on ~ #metaBox { top: 118px; }
+  #show:has(#metaBox:not([hidden])) #bigCnt.tr { right: calc(min(400px, 42vw) + 28px); }
   #bigCnt { position: absolute; color: rgba(255,255,255,.85); text-shadow: 0 2px 6px rgba(0,0,0,.85); font: 700 clamp(18px, 2.4vw, 34px)/1.15 system-ui, sans-serif;
             pointer-events: none; display: none; text-align: right; }
   #bigCnt.on { display: block; }
@@ -269,7 +287,7 @@
 <aside>
   <header class="top">
     <h1>letseetheworld <span style="font-weight:500">PhotoViewer</span></h1>
-    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-22.9</span>
+    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-23.1</span>
   </header>
 
   <section class="card">
@@ -296,57 +314,61 @@
   <section class="card" id="playCard">
     <div class="card-h">Просмотр</div>
     <div id="playOptsHome"><div id="playOpts">
-      <div class="lbl">Что показывать</div>
-      <div class="seg">
-        <label title="Отмеченные флажками папки"><input type="radio" name="scope" value="checked" checked>Отмеченные</label>
-        <label title="Выбранная папка с подпапками (щелчок по имени в дереве)"><input type="radio" name="scope" value="selected">Папка</label>
-        <label title="Фото с геометками в видимой части карты"><input type="radio" name="scope" value="map">На карте</label>
-        <label title="Все фото всех папок, без учёта флажков"><input type="radio" name="scope" value="all">Все</label>
-        <label title="Только отмеченные звёздочкой (избранное)"><input type="radio" name="scope" value="fav">★</label>
-      </div>
-      <div id="selLabel" class="hint sel-l"></div>
-      <div class="lbl">Порядок</div>
-      <div class="seg">
-        <label title="По именам папок и файлов"><input type="radio" name="mode" value="order" checked>Подряд</label>
-        <label title="Полностью случайно, без повторов"><input type="radio" name="mode" value="random">Случайно</label>
-        <label title="По порядку со случайным шагом, в среднем N (например 1, 10, 15, 23…); дойдя до конца — новый проход по ещё не показанным">
-          <input type="radio" name="mode" value="nth">Шаг ≈</label>
-        <label title="Умный: из каждой серии похожих кадров — один (самый резкий), дальше — шаг ≈ N по уникальным. N = 1 — все уникальные подряд">
-          <input type="radio" name="mode" value="smart">Умный</label>
-        <label class="nlab" title="Средний шаг N для режимов «Шаг» и «Умный»">N<input type="number" id="nth" min="1" max="1000" value="5" class="inl"></label>
-      </div>
-      <div class="kv smartonly" title="Насколько похожими должны быть кадры, чтобы считаться одной серией">
-        <span>Похожесть</span><input type="range" id="simThr" min="4" max="20" value="12"><span id="simVal" class="hint"></span></div>
-      <div class="lbl">Сортировка</div>
-      <div class="row" style="gap:6px;flex-wrap:nowrap">
-        <div class="seg grow">
-          <label title="По именам папок и файлов"><input type="radio" name="sortBy" value="name" checked>По имени</label>
-          <label title="По дате съёмки из EXIF (фото без даты — в конце)"><input type="radio" name="sortBy" value="date">По дате съёмки</label>
-        </div>
+      <div class="orow"><span>Набор</span>
         <div class="seg">
-          <label title="По возрастанию"><input type="radio" name="sortDir" value="asc" checked>↑</label>
-          <label title="По убыванию"><input type="radio" name="sortDir" value="desc">↓</label>
-        </div>
-      </div>
-      <div class="chips">
-        <label class="chip" title="Автоматическая смена кадров по таймеру. Выключите — листать вручную (↑/↓, клик, колесо)"><input type="checkbox" id="auto" checked>Авто</label>
-        <label class="chip" title="Интервал смены кадров, секунд">⏱<input type="number" id="interval" min="1" max="3600" step="0.5" value="5" class="inl">с</label>
-        <label class="chip" title="Путь и дата съёмки внизу кадра"><input type="checkbox" id="caption" checked>Подпись</label>
-        <label class="chip" title="Плавная смена кадров"><input type="checkbox" id="fade" checked>Плавно</label>
-        <label class="chip" title="После последнего — снова с начала"><input type="checkbox" id="loop" checked>По кругу</label>
-        <label class="chip" title="Крупный значок RAW в углу кадра, когда показан RAW-файл"><input type="checkbox" id="rawBadgeOn">Значок RAW</label>
-        <label class="chip" title="Номер фото в его исходной папке: «в папке 12 / 340»"><input type="checkbox" id="cntDir" checked>№ в папке</label>
-        <label class="chip" title="Номер фото во всём наборе показа (по сортировке): «в наборе 512 / 5578» — полезно при случайном порядке"><input type="checkbox" id="cntAll" checked>№ в наборе</label>
-        <span class="hint" style="align-self:center">Крупно в углу:</span>
-        <label class="chip" title="Номер в показе — крупно в углу кадра"><input type="checkbox" id="bigShow">№ показа</label>
-        <label class="chip" title="Номер в исходной папке — крупно в углу кадра"><input type="checkbox" id="bigDir">№ в папке</label>
-        <label class="chip" title="Номер во всём наборе — крупно в углу кадра"><input type="checkbox" id="bigAll">№ в наборе</label>
-        <div class="seg" title="В каком углу">
-          <label><input type="radio" name="bigPos" value="tl">↖</label><label><input type="radio" name="bigPos" value="tr" checked>↗</label>
-          <label><input type="radio" name="bigPos" value="bl">↙</label><label><input type="radio" name="bigPos" value="br">↘</label>
-        </div>
-        <label class="chip" title="Крупная подпись «город — дата»: город определяется по геометке через OpenStreetMap (Nominatim)"><input type="checkbox" id="placeOn">Город и дата</label>
-      </div>
+          <label title="Отмеченные флажками папки"><input type="radio" name="scope" value="checked" checked>Отмеченные</label>
+          <label title="Выбранная папка с подпапками (щелчок по имени в дереве)"><input type="radio" name="scope" value="selected">Папка</label>
+          <label title="Фото с геометками в видимой части карты"><input type="radio" name="scope" value="map">Карта</label>
+          <label title="Все фото всех папок, без учёта флажков"><input type="radio" name="scope" value="all">Все</label>
+          <label title="Только отмеченные звёздочкой (избранное)"><input type="radio" name="scope" value="fav">★</label>
+        </div></div>
+      <div id="selLabel" class="hint sel-l"></div>
+      <div class="orow"><span>Порядок</span>
+        <div class="seg">
+          <label title="По именам папок и файлов"><input type="radio" name="mode" value="order" checked>Подряд</label>
+          <label title="Полностью случайно, без повторов"><input type="radio" name="mode" value="random">Случайно</label>
+          <label title="По порядку со случайным шагом, в среднем N (например 1, 10, 15, 23…); дойдя до конца — новый проход по ещё не показанным">
+            <input type="radio" name="mode" value="nth">Шаг</label>
+          <label title="Умный: из каждой серии похожих кадров — один (самый резкий), дальше — шаг ≈ N по уникальным. N = 1 — все уникальные подряд">
+            <input type="radio" name="mode" value="smart">Умный</label>
+          <label class="nlab" title="Средний шаг N для режимов «Шаг» и «Умный»">N<input type="number" id="nth" min="1" max="1000" value="5" class="inl"></label>
+        </div></div>
+      <div class="orow smartonly" title="Насколько похожими должны быть кадры, чтобы считаться одной серией"><span>Похожесть</span>
+        <div class="row" style="gap:6px;flex-wrap:nowrap"><input type="range" id="simThr" min="4" max="20" value="12" class="grow"><span id="simVal" class="hint"></span></div></div>
+      <div class="orow"><span>Сортировка</span>
+        <div class="row" style="gap:6px;flex-wrap:nowrap">
+          <div class="seg grow">
+            <label title="По именам папок и файлов"><input type="radio" name="sortBy" value="name" checked>Имя</label>
+            <label title="По дате съёмки из EXIF (фото без даты — в конце)"><input type="radio" name="sortBy" value="date">Дата съёмки</label>
+          </div>
+          <div class="seg">
+            <label title="По возрастанию"><input type="radio" name="sortDir" value="asc" checked>↑</label>
+            <label title="По убыванию"><input type="radio" name="sortDir" value="desc">↓</label>
+          </div></div></div>
+      <div class="orow"><span>Показ</span>
+        <div class="chips sm">
+          <label class="chip" title="Автоматическая смена кадров по таймеру. Выключите — листать вручную (↑/↓, клик, колесо)"><input type="checkbox" id="auto" checked>Авто</label>
+          <label class="chip" title="Интервал смены кадров, секунд">⏱<input type="number" id="interval" min="1" max="3600" step="0.5" value="5" class="inl">с</label>
+          <label class="chip" title="Плавная смена кадров"><input type="checkbox" id="fade" checked>Плавно</label>
+          <label class="chip" title="После последнего — снова с начала"><input type="checkbox" id="loop" checked>По кругу</label>
+        </div></div>
+      <div class="orow"><span>На экране</span>
+        <div class="chips sm">
+          <label class="chip" title="Внизу: путь, дата съёмки, номер в показе, в наборе и в папке (I)"><input type="checkbox" id="caption" checked>Подпись</label>
+          <label class="chip" title="Крупно «город — дата»: город по геометке через OpenStreetMap (Nominatim)"><input type="checkbox" id="placeOn">Город и дата</label>
+          <label class="chip" title="Значок RAW в углу кадра"><input type="checkbox" id="rawBadgeOn">RAW</label>
+          <label class="chip" title="Полупрозрачная таблица метаданных: камера, объектив, экспозиция, GPS, файл… (E)"><input type="checkbox" id="metaOn">Метаданные</label>
+        </div></div>
+      <div class="orow"><span>Крупно</span>
+        <div class="chips sm">
+          <label class="chip" title="Номер в показе — крупно в углу кадра"><input type="checkbox" id="bigShow">№ показа</label>
+          <label class="chip" title="Номер в исходной папке — крупно в углу кадра"><input type="checkbox" id="bigDir">в папке</label>
+          <label class="chip" title="Номер во всём наборе — крупно в углу кадра"><input type="checkbox" id="bigAll">в наборе</label>
+          <div class="seg corner" title="В каком углу">
+            <label><input type="radio" name="bigPos" value="tl">↖</label><label><input type="radio" name="bigPos" value="tr" checked>↗</label>
+            <label><input type="radio" name="bigPos" value="bl">↙</label><label><input type="radio" name="bigPos" value="br">↘</label>
+          </div>
+        </div></div>
     </div></div>
     <div class="row" style="margin-top:10px">
       <button id="start" class="primary grow">▶ Слайд-шоу</button>
@@ -358,7 +380,7 @@
         <kbd>↑</kbd><kbd>↓</kbd> по порядку показа (в просмотре — соседние фото во всех папках) · <kbd>←</kbd><kbd>→</kbd> соседние фото на карте · <kbd>Пробел</kbd> пауза ·
         <kbd>+</kbd><kbd>−</kbd> интервал · <kbd>S</kbd> настройки · <kbd>I</kbd> подпись · <kbd>G</kbd> мини-карта · <kbd>M</kbd> к карте ·
         <kbd>Ctrl</kbd>+колесо — увеличить, <kbd>Ctrl</kbd>+мышь — двигать, <kbd>0</kbd> — сброс ·
-        <kbd>Ctrl</kbd>+<kbd>←</kbd><kbd>→</kbd> поворот (без сохранения) · <kbd>L</kbd> избранное · <kbd>J</kbd> связанный RAW/JPG · <kbd>F</kbd> полный экран · <kbd>Пробел</kbd> в просмотре — слайд-шоу отсюда · <kbd>Esc</kbd> выход (из галереи — обратно в неё)
+        <kbd>Ctrl</kbd>+<kbd>←</kbd><kbd>→</kbd> поворот (без сохранения) · <kbd>L</kbd> избранное · <kbd>J</kbd> связанный RAW/JPG · <kbd>E</kbd> метаданные · <kbd>F</kbd> полный экран · <kbd>Пробел</kbd> в просмотре — слайд-шоу отсюда · <kbd>Esc</kbd> выход (из галереи — обратно в неё)
       </div>
     </details>
   </section>
@@ -456,7 +478,7 @@
 
 <div id="show">
   <img id="imgA" alt="" referrerpolicy="no-referrer"><img id="imgB" alt="" referrerpolicy="no-referrer"><video id="vid" playsinline controls preload="auto"></video>
-  <div id="rawBadge"></div><div id="bigCnt"></div>
+  <div id="rawBadge"></div><div id="bigCnt"></div><div id="metaBox" hidden></div>
   <div id="twinBox" hidden><img alt="" referrerpolicy="no-referrer"><div class="tb-l"></div></div>
   <div id="place"></div><div id="cap"></div><div id="osd"></div><div id="bar"></div>
   <div id="showPanel" hidden><div class="sp-h"><b>Настройки показа</b><span class="grow"></span><button data-a="opts" title="Закрыть (S)">✕</button></div></div>
@@ -1902,12 +1924,12 @@ async function fitForScreen(blob) {
   let bmp;
   try { bmp = await createImageBitmap(blob, { imageOrientation: 'from-image' }); } catch (e) { return { blob, scaled: false }; }   // HEIC и т. п. — пусть пробует <img>
   const w = bmp.width, h = bmp.height;
-  if (Math.max(w, h) <= lim * 1.5) { bmp.close && bmp.close(); return { blob, scaled: false }; }
+  if (Math.max(w, h) <= lim * 1.5) { bmp.close && bmp.close(); return { blob, scaled: false, w, h }; }
   const k = lim / Math.max(w, h), c = document.createElement('canvas');
   c.width = Math.round(w * k); c.height = Math.round(h * k);
   const g = c.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(bmp, 0, 0, c.width, c.height); bmp.close && bmp.close();
   const out = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.92));
-  return out ? { blob: out, scaled: true } : { blob, scaled: false };
+  return out ? { blob: out, scaled: true, w, h } : { blob, scaled: false, w, h };
 }
 
 /* ============================ галерея (плитка) ============================ */
@@ -2068,7 +2090,7 @@ const Show = (() => {
       const fit = await fitForScreen(blob);
       const url = URL.createObjectURL(fit.blob);
       const im = new Image(); im.src = url;
-      try { await im.decode(); return { url, file, ok: true, w: im.naturalWidth, h: im.naturalHeight, orig: fit.scaled ? blob : null }; }
+      try { await im.decode(); return { url, file, ok: true, w: im.naturalWidth, h: im.naturalHeight, fullW: fit.w, fullH: fit.h, orig: fit.scaled ? blob : null }; }
       catch (err) { return { url, file, ok: false }; }
     })();
     cache.set(e.key, p);
@@ -2121,6 +2143,7 @@ const Show = (() => {
       $('twinPeekBtn').title = `${tw.path} — показать в уголке (J); щелчок по нему — перейти (фильтры сбрасываются)`;
     }
     if (twinOpen && tw) peekTwin(true); else $('twinBox').hidden = true;
+    fillMeta(e, r, my);
     Mini.update(e, r.file);
     $('favBtn').classList.toggle('on', Fav.has(e)); $('favBtn').textContent = Fav.has(e) ? '★' : '☆';
     showPlace(e, r.file, my);
@@ -2138,7 +2161,7 @@ const Show = (() => {
   async function counters(e, my) {
     const c = { pos: cnt.pos, all: null, dir: null };
     if (base.length > 1) { const k = base.findIndex(x => x.key === e.key); if (k >= 0) c.all = [k + 1, base.length]; }
-    if ($('cntDir').checked || $('bigDir').checked) {
+    if (true) {
       const all = await collect('all', { cached: true, nofilter: true }).catch(() => null);
       if (all) {
         let m = dirIdx.get(all);
@@ -2149,10 +2172,76 @@ const Show = (() => {
     if (my !== token) return;
     cnt = c;
     const parts = [];
-    if ($('cntAll').checked && c.all) parts.push(`в наборе ${c.all[0]} / ${c.all[1]}`);
-    if ($('cntDir').checked && c.dir) parts.push(`в папке «${c.dir[2]}» ${c.dir[0]} / ${c.dir[1]}`);
+    if (c.all) parts.push(`в наборе ${c.all[0]} / ${c.all[1]}`);
+    if (c.dir) parts.push(`в папке «${c.dir[2]}» ${c.dir[0]} / ${c.dir[1]}`);
     capS.extra = parts.length ? '  ·  ' + parts.join('  ·  ') : ''; paintCap(); paintBig();
   }
+  /* ---------- таблица метаданных (E) ---------- */
+  const fmtExp = (t) => !t ? '' : t >= 1 ? `${+t.toFixed(1)} с` : `1/${Math.round(1 / t)} с`;
+  const fmtMB = (b) => b ? (b >= 1048576 ? (b / 1048576).toFixed(1) + ' МБ' : Math.round(b / 1024) + ' КБ') : '';
+  async function fillMeta(e, r, my) {
+    const box = $('metaBox');
+    if (!$('metaOn').checked || !e) { box.hidden = true; return; }
+    let x = null;
+    const file = r && r.file;
+    try {
+      if (isVideo(e)) x = file ? await mp4meta(file) : null;
+      else if (file) x = await exifr.parse(file, { tiff: true, ifd0: true, exif: true, gps: true, ifd1: false, interop: false, xmp: true, iptc: true, icc: false,
+        makerNote: false, userComment: false, translateValues: true, reviveValues: false, mergeOutput: true });
+      else if (e.saf) x = await exifr.parse(await e.rangeFile().slice(0, 262144).arrayBuffer(), { translateValues: true, reviveValues: false, mergeOutput: true, xmp: true });
+    } catch (err) { x = null; }
+    if (my !== token) return;
+    x = x || {};
+    const v = metaMem.get(e.key) || {}, tw = e.twin || e.rawTwin;
+    const rows = [], used = new Set();
+    const add = (k, val, ...src) => { src.forEach(s2 => used.add(s2)); if (val != null && val !== '' && !(typeof val === 'number' && isNaN(val))) rows.push([k, String(val)]); };
+    const sep = (t) => rows.push([t, null]);
+    sep('Файл');
+    add('Имя', e.name); add('Папка', e.path.slice(0, -e.name.length - 1) || '/');
+    add('Размер', fmtMB(file ? file.size : (e.saf || e.cloud || {}).size));
+    const W = (r && r.fullW) || dims.w, H = (r && r.fullH) || dims.h, mp = W * H / 1e6;
+    add('Разрешение', W ? `${W}×${H}${mp >= 1 ? ` · ${mp.toFixed(1)} Мп` : ''}${RAW_RE.test(e.name) && r && !r.twinUsed ? ' (проявлено)' : ''}` : '', 'ExifImageWidth', 'ExifImageHeight', 'ImageWidth', 'ImageHeight');
+    add('Формат', { jpg: 'JPEG', raw: 'RAW', heic: 'HEIC', video: 'видео', other: (e.name.split('.').pop() || '').toUpperCase() }[fmtOf(e.name)]);
+    if (tw) add('Связанный', tw.path);
+    if (isVideo(e)) add('Длительность', fmtDur(x.dur || v.dur));
+    sep('Съёмка');
+    add('Дата', fmtExifDate(x.DateTimeOriginal || x['36867'] || v.date || '') + (x.OffsetTimeOriginal ? ` (UTC${x.OffsetTimeOriginal})` : ''), 'DateTimeOriginal', 'OffsetTimeOriginal', 'CreateDate', 'ModifyDate');
+    add('Камера', cameraName(x.Make, x.Model) || v.model || '', 'Make', 'Model');
+    add('Объектив', [x.LensMake, x.LensModel].filter(Boolean).join(' '), 'LensMake', 'LensModel', 'LensInfo');
+    add('Выдержка', fmtExp(x.ExposureTime), 'ExposureTime', 'ShutterSpeedValue');
+    add('Диафрагма', x.FNumber ? 'f/' + (+x.FNumber).toFixed(1).replace(/\.0$/, '') : '', 'FNumber', 'ApertureValue');
+    add('ISO', x.ISO || x.ISOSpeedRatings || '', 'ISO', 'ISOSpeedRatings');
+    add('Фокусное', x.FocalLength ? `${+(+x.FocalLength).toFixed(1)} мм${x.FocalLengthIn35mmFormat ? ` · ${x.FocalLengthIn35mmFormat} мм экв.` : ''}` : '', 'FocalLength', 'FocalLengthIn35mmFormat');
+    add('Экспокоррекция', x.ExposureCompensation ? `${x.ExposureCompensation > 0 ? '+' : ''}${(+x.ExposureCompensation).toFixed(1)} EV` : '', 'ExposureCompensation');
+    const RU = { 'Normal program': 'авто (P)', 'Manual': 'ручной (M)', 'Aperture priority': 'приоритет диафрагмы (A)', 'Shutter priority': 'приоритет выдержки (S)',
+      'Portrait mode': 'портрет', 'Landscape mode': 'пейзаж', 'Auto': 'авто', 'Manual white balance': 'ручной', 'Average': 'средний', 'CenterWeightedAverage': 'центровзвешенный',
+      'Spot': 'точечный', 'MultiSpot': 'многоточечный', 'Pattern': 'матричный', 'Partial': 'частичный' };
+    const ru = (t) => t == null ? '' : RU[t] || t;
+    const flashRu = (t) => !t ? '' : /did not fire|No flash/i.test(t) ? 'не срабатывала' : /fired/i.test(t) ? 'сработала' : t;
+    add('Режим', ru(x.ExposureProgram), 'ExposureProgram'); add('Замер', ru(x.MeteringMode), 'MeteringMode');
+    add('Вспышка', flashRu(x.Flash), 'Flash'); add('Баланс белого', ru(x.WhiteBalance), 'WhiteBalance');
+    const lat = x.latitude != null ? x.latitude : v.lat, lon = x.longitude != null ? x.longitude : v.lon;
+    if (lat != null) {
+      sep('Место');
+      add('Координаты', `${(+lat).toFixed(5)}, ${(+lon).toFixed(5)}${v.fromTwin ? ' (из связанного JPG)' : ''}`, 'latitude', 'longitude', 'GPSLatitude', 'GPSLongitude', 'GPSLatitudeRef', 'GPSLongitudeRef');
+      add('Высота', x.GPSAltitude != null ? `${Math.round(x.GPSAltitude)} м` : '', 'GPSAltitude', 'GPSAltitudeRef');
+      add('Направление', x.GPSImgDirection != null ? `${Math.round(x.GPSImgDirection)}°` : '', 'GPSImgDirection', 'GPSImgDirectionRef');
+      Geo.city(lat, lon).then(c => { if (my === token && c && c.name) { const td = box.querySelector('[data-k=city]'); if (td) td.textContent = [c.name, c.country].filter(Boolean).join(', '); } }).catch(() => {});
+      rows.push(['Город', '…', 'city']);
+    }
+    add('Прошивка / ПО', x.Software, 'Software'); add('Автор', x.Artist || x.Copyright, 'Artist', 'Copyright');
+    // остальные теги — списком
+    const skip = /^(thumbnail|MakerNote|UserComment|PrintIM|ComponentsConfiguration|.*Version|ExifIFDPointer|GPSInfo|InteropIFDPointer|JPEGInterchangeFormat.*|StripOffsets|StripByteCounts|TileOffsets|TileByteCounts|OpcodeList.*|ColorMatrix.*|ForwardMatrix.*|CalibrationIlluminant.*|NoiseProfile|.*Matrix|ImageDescription)$/;
+    const rest = Object.entries(x).filter(([k, val]) => !used.has(k) && !skip.test(k) && val != null && typeof val !== 'object' || (Array.isArray(val) && val.length <= 4 && !used.has(k) && !skip.test(k)))
+      .map(([k, val]) => [k, Array.isArray(val) ? val.join(', ') : String(val)]).filter(([, val]) => val.length < 200);
+    const tr = rows.map(([k, val, id]) => val == null ? `<tr class="sep"><th colspan="2">${esc(k)}</th></tr>` : `<tr><th>${esc(k)}</th><td${id ? ` data-k="${id}"` : ''}>${esc(val)}</td></tr>`).join('');
+    box.innerHTML = `<table>${tr}</table>` + (rest.length ? `<details><summary>Все теги (${rest.length})</summary><table>${rest.map(([k, val]) => `<tr><th>${esc(k)}</th><td>${esc(val)}</td></tr>`).join('')}</table></details>` : '') +
+      (!file && e.cloud ? '<div style="opacity:.7;margin-top:4px">Файл с Яндекс.Диска: браузеру доступны только данные, которые присылает Диск.</div>' : '');
+    box.hidden = false;
+  }
+  $('metaBox').addEventListener('click', e => e.stopPropagation());
+  $('metaBox').addEventListener('wheel', e => e.stopPropagation(), { passive: true });
+
   // Крупно в углу — выбранные счётчики
   function paintBig() {
     const b = $('bigCnt'), lines = [];
@@ -2309,7 +2398,7 @@ const Show = (() => {
     const so = JSON.stringify(sortOpts());
     if (so !== curSort) { curSort = so; if (viewMode) { view(shown || list[idx]); return; } playFromHere(); return; }   // новая сортировка
     if (!viewMode && scopeNow() !== curScope) { playFromHere(); return; }   // сменили набор — пересобираем с текущего фото
-    if (shown) { showPlace(shown, curR && curR.file, token); counters(shown, token); $('rawBadge').classList.toggle('on', RAW_RE.test(shown.name) && $('rawBadgeOn').checked); }
+    if (shown) { showPlace(shown, curR && curR.file, token); counters(shown, token); fillMeta(shown, curR, token); $('rawBadge').classList.toggle('on', RAW_RE.test(shown.name) && $('rawBadgeOn').checked); }
     el.style.setProperty('--fade', o.fade ? '.6s' : '0s');
     if (o.caption !== showCap) { showCap = o.caption; cap.hidden = !showCap; paintCap(); }   // и в режиме просмотра
     paintBig();
@@ -2337,7 +2426,7 @@ const Show = (() => {
     open = false; token++; clearTimeout(timer); el.classList.remove('open'); stopVideo();
     dropCache(); walk = null; shown = null;
     imgs.forEach(im => { im.removeAttribute('src'); im.classList.remove('on'); im.style.transform = ''; });
-    $('twinBox').hidden = true; twinOpen = false; $('rawBadge').classList.remove('on'); $('bigCnt').className = '';
+    $('twinBox').hidden = true; twinOpen = false; $('rawBadge').classList.remove('on'); $('bigCnt').className = ''; $('metaBox').hidden = true;
     resetZoom();
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   }
@@ -2435,6 +2524,7 @@ const Show = (() => {
     else if (k === 's' || k === 'S' || k === 'ы' || k === 'Ы') togglePanel();
     else if (k === 'l' || k === 'L' || k === 'д' || k === 'Д') toggleFav();
     else if (k === 'j' || k === 'J' || k === 'о' || k === 'О') peekTwin();
+    else if (k === 'e' || k === 'E' || k === 'у' || k === 'У') { $('metaOn').checked = !$('metaOn').checked; saveSettings(); fillMeta(shown, curR, token); }
     else if (k === 'f' || k === 'F' || k === 'а' || k === 'А') { document.fullscreenElement ? document.exitFullscreen() : el.requestFullscreen().catch(() => {}); }
     else return;
     ev.preventDefault();
@@ -2754,7 +2844,7 @@ $('clearCache').onclick = async () => { await DB.clear('meta').catch(() => {}); 
 function saveSettings() {
   store('settings', {
     scope: document.querySelector('input[name=scope]:checked').value, mode: document.querySelector('input[name=mode]:checked').value,
-    simThr: $('simThr').value, rawBadgeOn: $('rawBadgeOn').checked, cntDir: $('cntDir').checked, cntAll: $('cntAll').checked,
+    simThr: $('simThr').value, rawBadgeOn: $('rawBadgeOn').checked, metaOn: $('metaOn').checked,
     bigShow: $('bigShow').checked, bigDir: $('bigDir').checked, bigAll: $('bigAll').checked, bigPos: (document.querySelector('input[name=bigPos]:checked') || {}).value, auto: $('auto').checked, placeOn: $('placeOn').checked, sortBy: sortOpts().by, sortDir: sortOpts().dir, density: $('density').value, thumbSize: $('thumbSize').value, coverZoom: $('coverZoom').value, rawSkip: $('rawSkip').checked,
     nth: $('nth').value, interval: $('interval').value, caption: $('caption').checked, fade: $('fade').checked, loop: $('loop').checked,
   });
@@ -2768,7 +2858,7 @@ function saveSettings() {
   $('auto').checked = s.auto !== false;
   if (s.simThr) { $('simThr').value = s.simThr; $('simThr').dispatchEvent(new Event('input')); }
   $('placeOn').checked = !!s.placeOn;
-  $('rawBadgeOn').checked = !!s.rawBadgeOn; $('cntDir').checked = s.cntDir !== false; $('cntAll').checked = s.cntAll !== false;
+  $('rawBadgeOn').checked = !!s.rawBadgeOn; $('metaOn').checked = !!s.metaOn;
   $('bigShow').checked = !!s.bigShow; $('bigDir').checked = !!s.bigDir; $('bigAll').checked = !!s.bigAll;
   { const r = s.bigPos && document.querySelector(`input[name=bigPos][value="${s.bigPos}"]`); if (r) r.checked = true; }
   for (const [n, v] of [['sortBy', s.sortBy], ['sortDir', s.sortDir]]) { const r = v && document.querySelector(`input[name=${n}][value="${v}"]`); if (r) r.checked = true; } if (s.thumbSize) $('thumbSize').value = s.thumbSize;
