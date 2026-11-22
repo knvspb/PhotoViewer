@@ -124,6 +124,10 @@
   #show video.on { display: block; }
   .tile .vb, .ph .vb { position: absolute; left: 4px; bottom: 4px; padding: 0 5px; border-radius: 4px; background: rgba(0,0,0,.65); color: #fff; font: 600 11px/18px system-ui, sans-serif; }
   .ph .vb { left: 2px; bottom: 2px; font-size: 10px; line-height: 14px; }
+  /* пометка RAW — чёрно-белая, полупрозрачная */
+  .tile .rb, .ph .rb { position: absolute; left: 4px; bottom: 4px; padding: 0 5px; border-radius: 4px; background: rgba(0,0,0,.45); color: rgba(255,255,255,.85);
+                       border: 1px solid rgba(255,255,255,.4); font: 700 11px/16px system-ui, sans-serif; letter-spacing: .04em; pointer-events: none; }
+  .ph .rb { left: 2px; bottom: 2px; font-size: 9px; line-height: 12px; padding: 0 3px; }
   #cap { position: absolute; left: 16px; bottom: 14px; right: 16px; color: #fff; font-size: 14px;
          text-shadow: 0 1px 3px #000, 0 0 8px #000; pointer-events: none; white-space: pre-line; }
   #place { position: absolute; left: 16px; bottom: 58px; right: 16px; color: #fff; font: 600 clamp(22px, 3.4vw, 48px)/1.15 system-ui, sans-serif;
@@ -136,6 +140,15 @@
               border: 1px solid rgba(255,255,255,.35); text-shadow: 0 1px 3px rgba(0,0,0,.6);
               font: 800 clamp(18px, 2.6vw, 36px)/1.2 system-ui, sans-serif; letter-spacing: .06em; display: none; pointer-events: none; }
   #rawBadge.on { display: block; }
+  #bigCnt { position: absolute; color: rgba(255,255,255,.85); text-shadow: 0 2px 6px rgba(0,0,0,.85); font: 700 clamp(18px, 2.4vw, 34px)/1.15 system-ui, sans-serif;
+            pointer-events: none; display: none; text-align: right; }
+  #bigCnt.on { display: block; }
+  #bigCnt small { display: block; font-size: .55em; font-weight: 600; opacity: .9; }
+  #bigCnt.tl { top: 56px; left: 16px; text-align: left; } #bigCnt.tr { top: 56px; right: 16px; }
+  #bigCnt.bl { bottom: 130px; left: 16px; text-align: left; } #bigCnt.br { bottom: 40px; right: 16px; }
+  #rawBadge.on ~ #bigCnt.tr { top: 118px; }
+  #show:has(#twinBox:not([hidden])) #bigCnt.br { bottom: calc(40px + 34vh); }
+  #show:has(#showPanel:not([hidden])) #bigCnt.tl { left: 372px; }
   #rawBadge small { display: block; font-size: .42em; font-weight: 600; letter-spacing: 0; opacity: .9; }
   #twinBox { position: absolute; right: 16px; bottom: 40px; width: min(24vw, 360px); opacity: .9; background: #111; border: 2px solid rgba(255,255,255,.6);
              border-radius: 8px; overflow: hidden; box-shadow: 0 6px 24px rgba(0,0,0,.6); cursor: pointer; }
@@ -256,7 +269,7 @@
 <aside>
   <header class="top">
     <h1>letseetheworld <span style="font-weight:500">PhotoViewer</span></h1>
-    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-22.8</span>
+    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-22.9</span>
   </header>
 
   <section class="card">
@@ -322,8 +335,16 @@
         <label class="chip" title="Плавная смена кадров"><input type="checkbox" id="fade" checked>Плавно</label>
         <label class="chip" title="После последнего — снова с начала"><input type="checkbox" id="loop" checked>По кругу</label>
         <label class="chip" title="Крупный значок RAW в углу кадра, когда показан RAW-файл"><input type="checkbox" id="rawBadgeOn">Значок RAW</label>
-        <label class="chip" title="Номер фото в его исходной папке: «в папке 12 / 340»"><input type="checkbox" id="cntDir">№ в папке</label>
-        <label class="chip" title="Номер фото во всём наборе показа (по сортировке): «в наборе 512 / 5578» — полезно при случайном порядке"><input type="checkbox" id="cntAll">№ в наборе</label>
+        <label class="chip" title="Номер фото в его исходной папке: «в папке 12 / 340»"><input type="checkbox" id="cntDir" checked>№ в папке</label>
+        <label class="chip" title="Номер фото во всём наборе показа (по сортировке): «в наборе 512 / 5578» — полезно при случайном порядке"><input type="checkbox" id="cntAll" checked>№ в наборе</label>
+        <span class="hint" style="align-self:center">Крупно в углу:</span>
+        <label class="chip" title="Номер в показе — крупно в углу кадра"><input type="checkbox" id="bigShow">№ показа</label>
+        <label class="chip" title="Номер в исходной папке — крупно в углу кадра"><input type="checkbox" id="bigDir">№ в папке</label>
+        <label class="chip" title="Номер во всём наборе — крупно в углу кадра"><input type="checkbox" id="bigAll">№ в наборе</label>
+        <div class="seg" title="В каком углу">
+          <label><input type="radio" name="bigPos" value="tl">↖</label><label><input type="radio" name="bigPos" value="tr" checked>↗</label>
+          <label><input type="radio" name="bigPos" value="bl">↙</label><label><input type="radio" name="bigPos" value="br">↘</label>
+        </div>
         <label class="chip" title="Крупная подпись «город — дата»: город определяется по геометке через OpenStreetMap (Nominatim)"><input type="checkbox" id="placeOn">Город и дата</label>
       </div>
     </div></div>
@@ -435,7 +456,7 @@
 
 <div id="show">
   <img id="imgA" alt="" referrerpolicy="no-referrer"><img id="imgB" alt="" referrerpolicy="no-referrer"><video id="vid" playsinline controls preload="auto"></video>
-  <div id="rawBadge"></div>
+  <div id="rawBadge"></div><div id="bigCnt"></div>
   <div id="twinBox" hidden><img alt="" referrerpolicy="no-referrer"><div class="tb-l"></div></div>
   <div id="place"></div><div id="cap"></div><div id="osd"></div><div id="bar"></div>
   <div id="showPanel" hidden><div class="sp-h"><b>Настройки показа</b><span class="grow"></span><button data-a="opts" title="Закрыть (S)">✕</button></div></div>
@@ -1292,6 +1313,12 @@ async function ensureMeta(list, onProgress) {
   }
   await Promise.all(Array.from({ length: 8 }, worker));
   if (pending.length) await DB.putMany('meta', pending).catch(() => {});
+  // RAW, прочитанные раньше без двойника (например, открытые в просмотре до поиска), — дополняем данными JPG
+  const need = list.filter(e => e.twin && !e.cloud && (metaMem.get(e.key) || {}).lat == null && !(metaMem.get(e.key) || {}).twinChecked);
+  if (need.length) {
+    await ensureMeta(need.map(e => e.twin).filter(t => !metaMem.has(t.key)));
+    for (const e of need) { const v = metaMem.get(e.key), t = metaMem.get(e.twin.key); if (v) remember(e, Object.assign(mergeTwin(v, t), { twinChecked: true })); }
+  }
   if (todo.length) renderCams();
   return { fromCache, read: todo.length - fromCache, cached: list.length - todo.length };
 }
@@ -1331,6 +1358,7 @@ async function readGps(entry, file) {
   if (entry.saf && !file && !isVideo(entry)) v = metaFrom(await exifr.parse(await f.slice(0, 262144).arrayBuffer(), META_OPTS).catch(() => null));
   else if (isVideo(entry)) { const x = await mp4meta(f).catch(() => null); v = metaFrom(x); if (x && x.dur) v.dur = x.dur; }
   else if (!v) v = metaFrom(await metaParse(f, META_OPTS).catch(() => null));
+  if (entry.twin && (v.lat == null || !v.date)) { await readGps(entry.twin).catch(() => null); v = mergeTwin(v, metaMem.get(entry.twin.key)); }   // RAW: данные JPG-двойника
   remember(entry, v);
   return gpsMem.get(entry.key);
 }
@@ -1914,7 +1942,7 @@ const Gallery = (() => {
     entries.forEach((e, i) => {
       const t = document.createElement('div'); t.className = 'tile'; t.dataset.i = i; t.title = e.path;
       const g = gpsMem.get(e.key);
-      const vd = isVideo(e) ? `<span class="vb">▶ ${fmtDur((metaMem.get(e.key) || {}).dur)}</span>` : '';
+      const vd = isVideo(e) ? `<span class="vb">▶ ${fmtDur((metaMem.get(e.key) || {}).dur)}</span>` : RAW_RE.test(e.name) ? '<span class="rb">RAW</span>' : '';
       t.innerHTML = `<img alt="" referrerpolicy="no-referrer">${vd}<span class="nm">${esc(e.name)}</span><button class="fav${Fav.has(e) ? ' on' : ''}" title="Избранное (L)">${Fav.has(e) ? '★' : '☆'}</button>` +
         (g ? '<button class="geo" title="Показать на карте">📍</button>' : '');
       frag.appendChild(t);
@@ -2075,7 +2103,9 @@ const Show = (() => {
     capS = { path: e.path, date: '', note, extra: '' }; paintCap();
     if (showCap) {
       (metaMem.has(e.key) || !r.file ? Promise.resolve(metaMem.get(e.key) && { DateTimeOriginal: metaMem.get(e.key).date })
-        : metaParse(r.file, META_OPTS).then(x => { const v = metaFrom(x); remember(e, v); return { DateTimeOriginal: v.date }; })).then(x => {
+        : metaParse(r.file, META_OPTS).then(async x => { let v = metaFrom(x);
+            if (e.twin && (v.lat == null || !v.date)) { await readGps(e.twin).catch(() => null); v = mergeTwin(v, metaMem.get(e.twin.key)); }
+            remember(e, v); return { DateTimeOriginal: v.date }; })).then(x => {
         if (my === token && x && x.DateTimeOriginal) { capS.date = fmtExifDate(x.DateTimeOriginal); paintCap(); }
       }).catch(() => {});
       counters(e, my);
@@ -2104,19 +2134,33 @@ const Show = (() => {
   }
   // № в наборе (по сортировке) и № в исходной папке (все файлы папки, без фильтров)
   const dirIdx = new WeakMap();
+  let cnt = { pos: null, all: null, dir: null };   // [k, n] — номер в показе, в наборе, в папке (+ имя папки)
   async function counters(e, my) {
-    const parts = [];
-    if ($('cntAll').checked && base.length > 1) { const k = base.findIndex(x => x.key === e.key); if (k >= 0) parts.push(`в наборе ${k + 1} / ${base.length}`); }
-    if ($('cntDir').checked) {
+    const c = { pos: cnt.pos, all: null, dir: null };
+    if (base.length > 1) { const k = base.findIndex(x => x.key === e.key); if (k >= 0) c.all = [k + 1, base.length]; }
+    if ($('cntDir').checked || $('bigDir').checked) {
       const all = await collect('all', { cached: true, nofilter: true }).catch(() => null);
       if (all) {
         let m = dirIdx.get(all);
         if (!m) { m = new Map(); const by = new Map(); for (const x of all) { const d = x.srcId + '|' + x.dir; if (!by.has(d)) by.set(d, []); by.get(d).push(x); } for (const arr of by.values()) arr.forEach((x, i) => m.set(x.key, [i + 1, arr.length])); dirIdx.set(all, m); }
-        const p = m.get(e.key); if (p) parts.push(`в папке «${e.dir.split('/').pop() || sources.find(s => s.id === e.srcId)?.name || ''}» ${p[0]} / ${p[1]}`);
+        const p = m.get(e.key); if (p) c.dir = [p[0], p[1], e.dir.split('/').pop() || (sources.find(s => s.id === e.srcId) || {}).name || ''];
       }
     }
     if (my !== token) return;
-    capS.extra = parts.length ? '  ·  ' + parts.join('  ·  ') : ''; paintCap();
+    cnt = c;
+    const parts = [];
+    if ($('cntAll').checked && c.all) parts.push(`в наборе ${c.all[0]} / ${c.all[1]}`);
+    if ($('cntDir').checked && c.dir) parts.push(`в папке «${c.dir[2]}» ${c.dir[0]} / ${c.dir[1]}`);
+    capS.extra = parts.length ? '  ·  ' + parts.join('  ·  ') : ''; paintCap(); paintBig();
+  }
+  // Крупно в углу — выбранные счётчики
+  function paintBig() {
+    const b = $('bigCnt'), lines = [];
+    if ($('bigShow').checked && cnt.pos) lines.push(`${cnt.pos[0]} / ${cnt.pos[1]}`);
+    if ($('bigAll').checked && cnt.all) lines.push(`<small>в наборе</small>${cnt.all[0]} / ${cnt.all[1]}`);
+    if ($('bigDir').checked && cnt.dir) lines.push(`<small>${esc(cnt.dir[2])}</small>${cnt.dir[0]} / ${cnt.dir[1]}`);
+    b.innerHTML = lines.join('');
+    b.className = (lines.length && open ? 'on ' : '') + ((document.querySelector('input[name=bigPos]:checked') || {}).value || 'tr');
   }
   // Связанный файл: показать в уголке / перейти к нему
   let twinOpen = false;
@@ -2164,6 +2208,7 @@ const Show = (() => {
     }
     if (i < 0) i = list.length - 1;
     idx = i;
+    cnt.pos = [i + 1, list.length];
     const r = await render(list[i], viewMode ? `Просмотр · все папки · ${i + 1} / ${list.length}` : `${i + 1} / ${list.length}`, my);
     if (!r) return;
     if (!r.ok) {                    // например HEIC в Chrome или битый файл — пропускаем, но причину показываем
@@ -2226,6 +2271,7 @@ const Show = (() => {
       note = walk.path.length > 1 ? `🗺 назад · шаг ${walk.path.length - 1} по карте` : '🗺 начало пути по карте';
     }
     const inList = list.findIndex(x => x.key === target.key);
+    cnt.pos = inList >= 0 ? [inList + 1, list.length] : null;
     if (inList >= 0) note += ` · ${inList + 1} / ${list.length}`;
     const my = ++token; clearTimeout(timer); bar.style.transition = 'none'; bar.style.width = '0';
     const w = walk;
@@ -2264,9 +2310,10 @@ const Show = (() => {
     if (so !== curSort) { curSort = so; if (viewMode) { view(shown || list[idx]); return; } playFromHere(); return; }   // новая сортировка
     if (!viewMode && scopeNow() !== curScope) { playFromHere(); return; }   // сменили набор — пересобираем с текущего фото
     if (shown) { showPlace(shown, curR && curR.file, token); counters(shown, token); $('rawBadge').classList.toggle('on', RAW_RE.test(shown.name) && $('rawBadgeOn').checked); }
-    if (viewMode) { schedule(); return; }
     el.style.setProperty('--fade', o.fade ? '.6s' : '0s');
-    if (o.caption !== showCap) { showCap = o.caption; cap.hidden = !showCap; }
+    if (o.caption !== showCap) { showCap = o.caption; cap.hidden = !showCap; paintCap(); }   // и в режиме просмотра
+    paintBig();
+    if (viewMode) { schedule(); return; }
     if ((mode !== curMode || n !== curN || (mode === 'smart' && (Similar.info(base) || {}).thr !== 0.97 - (+$('simThr').value - 4) * 0.01)) && base.length > 1) {
       if (mode === 'smart' && (!Similar.info(base) || Similar.info(base).thr !== 0.97 - (+$('simThr').value - 4) * 0.01)) {   // серии ещё не посчитаны
         curMode = ''; preparePlaylist(base, mode, (t) => flash(t)).then(() => { if (open) applySettings(); }); return;
@@ -2290,7 +2337,7 @@ const Show = (() => {
     open = false; token++; clearTimeout(timer); el.classList.remove('open'); stopVideo();
     dropCache(); walk = null; shown = null;
     imgs.forEach(im => { im.removeAttribute('src'); im.classList.remove('on'); im.style.transform = ''; });
-    $('twinBox').hidden = true; twinOpen = false; $('rawBadge').classList.remove('on');
+    $('twinBox').hidden = true; twinOpen = false; $('rawBadge').classList.remove('on'); $('bigCnt').className = '';
     resetZoom();
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
   }
@@ -2595,7 +2642,8 @@ const MapView = (() => {
         el.title = `${n} фото — щёлкните, чтобы приблизить`;
       } else {
         el.className = 'ph'; el.style.width = el.style.height = size + 'px';
-        el.innerHTML = '<img alt="" referrerpolicy="no-referrer">' + (isVideo(points[pr.i].entry) ? '<span class="vb">▶</span>' : ''); el.title = points[pr.i].entry.path;
+        el.innerHTML = '<img alt="" referrerpolicy="no-referrer">' + (isVideo(points[pr.i].entry) ? '<span class="vb">▶</span>' : '') +
+          (RAW_RE.test(points[pr.i].entry.name) ? '<span class="rb">RAW</span>' : ''); el.title = points[pr.i].entry.path;
         fillThumb(el, pr.i);
       }
       el.style.zIndex = Math.round((90 - lat) * 1000);       // южнее — выше (как в Leaflet), без хаотичного перекрытия
@@ -2706,7 +2754,8 @@ $('clearCache').onclick = async () => { await DB.clear('meta').catch(() => {}); 
 function saveSettings() {
   store('settings', {
     scope: document.querySelector('input[name=scope]:checked').value, mode: document.querySelector('input[name=mode]:checked').value,
-    simThr: $('simThr').value, rawBadgeOn: $('rawBadgeOn').checked, cntDir: $('cntDir').checked, cntAll: $('cntAll').checked, auto: $('auto').checked, placeOn: $('placeOn').checked, sortBy: sortOpts().by, sortDir: sortOpts().dir, density: $('density').value, thumbSize: $('thumbSize').value, coverZoom: $('coverZoom').value, rawSkip: $('rawSkip').checked,
+    simThr: $('simThr').value, rawBadgeOn: $('rawBadgeOn').checked, cntDir: $('cntDir').checked, cntAll: $('cntAll').checked,
+    bigShow: $('bigShow').checked, bigDir: $('bigDir').checked, bigAll: $('bigAll').checked, bigPos: (document.querySelector('input[name=bigPos]:checked') || {}).value, auto: $('auto').checked, placeOn: $('placeOn').checked, sortBy: sortOpts().by, sortDir: sortOpts().dir, density: $('density').value, thumbSize: $('thumbSize').value, coverZoom: $('coverZoom').value, rawSkip: $('rawSkip').checked,
     nth: $('nth').value, interval: $('interval').value, caption: $('caption').checked, fade: $('fade').checked, loop: $('loop').checked,
   });
 }
@@ -2719,7 +2768,9 @@ function saveSettings() {
   $('auto').checked = s.auto !== false;
   if (s.simThr) { $('simThr').value = s.simThr; $('simThr').dispatchEvent(new Event('input')); }
   $('placeOn').checked = !!s.placeOn;
-  $('rawBadgeOn').checked = !!s.rawBadgeOn; $('cntDir').checked = !!s.cntDir; $('cntAll').checked = !!s.cntAll;
+  $('rawBadgeOn').checked = !!s.rawBadgeOn; $('cntDir').checked = s.cntDir !== false; $('cntAll').checked = s.cntAll !== false;
+  $('bigShow').checked = !!s.bigShow; $('bigDir').checked = !!s.bigDir; $('bigAll').checked = !!s.bigAll;
+  { const r = s.bigPos && document.querySelector(`input[name=bigPos][value="${s.bigPos}"]`); if (r) r.checked = true; }
   for (const [n, v] of [['sortBy', s.sortBy], ['sortDir', s.sortDir]]) { const r = v && document.querySelector(`input[name=${n}][value="${v}"]`); if (r) r.checked = true; } if (s.thumbSize) $('thumbSize').value = s.thumbSize;
   const r = document.querySelector(`input[name=mode][value="${s.mode}"]`); if (r) r.checked = true;
   if (s.nth) $('nth').value = s.nth; if (s.interval) $('interval').value = s.interval;
