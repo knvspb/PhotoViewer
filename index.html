@@ -246,7 +246,7 @@
 <aside>
   <header class="top">
     <h1>letseetheworld <span style="font-weight:500">PhotoViewer</span></h1>
-    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-22.5</span>
+    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-22.6</span>
   </header>
 
   <section class="card">
@@ -2731,6 +2731,19 @@ if (NATIVE) {
   });
   $('addDirCompat').hidden = true;
   $('addDir').title = 'Выбрать папку на устройстве или флешке';
+}
+
+// Проверка обновления: браузер (и GitHub Pages) могут до 10 минут показывать старую страницу из кэша
+if (!NATIVE && /^https?:$/.test(location.protocol)) {
+  const mine = $('ver').textContent.trim();
+  fetch(location.pathname + '?v=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.text() : '').then(t => {
+    const m = /id="ver"[^>]*>\s*(v[\d.-]+)/.exec(t);
+    if (m && m[1] !== mine) {
+      const n = $('notice'); n.hidden = false; n.classList.remove('err');
+      n.innerHTML = `Вышла новая версия <b>${esc(m[1])}</b> (открыта ${esc(mine)}). <button class="sm primary" id="reloadNew">Обновить</button>`;
+      $('reloadNew').onclick = () => location.replace(location.pathname + '?v=' + encodeURIComponent(m[1]) + location.hash);
+    }
+  }).catch(() => {});
 }
 
 renderCams();
