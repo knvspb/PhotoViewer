@@ -161,7 +161,9 @@
   #bigCnt { position: absolute; color: rgba(255,255,255,.85); text-shadow: 0 2px 6px rgba(0,0,0,.85); font: 700 clamp(18px, 2.4vw, 34px)/1.15 system-ui, sans-serif;
             pointer-events: none; display: none; text-align: right; }
   #bigCnt.on { display: block; }
-  #bigCnt small { display: block; font-size: .55em; font-weight: 600; opacity: .9; }
+  #bigCnt .bc { margin-bottom: .45em; line-height: 1.05; }
+  #bigCnt .bc:last-child { margin-bottom: 0; }
+  #bigCnt small { display: block; font-size: .5em; font-weight: 600; opacity: .85; line-height: 1.25; margin-bottom: .1em; }
   #bigCnt.tl { top: 56px; left: 16px; text-align: left; } #bigCnt.tr { top: 56px; right: 16px; }
   #bigCnt.bl { bottom: 130px; left: 16px; text-align: left; } #bigCnt.br { bottom: 40px; right: 16px; }
   #rawBadge.on ~ #bigCnt.tr { top: 118px; }
@@ -287,7 +289,7 @@
 <aside>
   <header class="top">
     <h1>letseetheworld <span style="font-weight:500">PhotoViewer</span></h1>
-    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-23.1</span>
+    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-23.2</span>
   </header>
 
   <section class="card">
@@ -329,7 +331,7 @@
           <label title="Полностью случайно, без повторов"><input type="radio" name="mode" value="random">Случайно</label>
           <label title="По порядку со случайным шагом, в среднем N (например 1, 10, 15, 23…); дойдя до конца — новый проход по ещё не показанным">
             <input type="radio" name="mode" value="nth">Шаг</label>
-          <label title="Умный: из каждой серии похожих кадров — один (самый резкий), дальше — шаг ≈ N по уникальным. N = 1 — все уникальные подряд">
+          <label title="Умный: из каждой серии похожих кадров — один (самый резкий); один проход вперёд по уникальным со случайным шагом ≈ N (все номера растут), по кругу — новый проход. N = 1 — все уникальные подряд">
             <input type="radio" name="mode" value="smart">Умный</label>
           <label class="nlab" title="Средний шаг N для режимов «Шаг» и «Умный»">N<input type="number" id="nth" min="1" max="1000" value="5" class="inl"></label>
         </div></div>
@@ -435,6 +437,7 @@
       <input type="range" id="thumbSize" min="24" max="140" step="4" value="52">
       <span id="thumbVal" class="hint"></span>
     </div>
+    <label class="chip" style="margin-top:8px" title="RAW обычно дублируют JPG (тот же кадр) — по умолчанию на карте их нет"><input type="checkbox" id="mapRaw">RAW на карте</label>
     <div class="kv" title="Группы фото показываются кружком с числом; при достаточном приближении — миниатюрой первого фото">
       <span>Группы</span>
       <select id="coverZoom">
@@ -1141,7 +1144,9 @@ async function collectFresh(scope) {
 function buildPlaylist(all, mode, n) {
   if (mode === 'random') return shuffle(all.slice());
   if (mode === 'nth') return strideOrder(all, n, -1);
-  if (mode === 'smart') return strideOrder(Similar.uniques(all), n, -1);   // перед этим — await Similar.prepare(all)
+  // «Умный»: один проход вперёд по уникальным кадрам — номера в показе, в наборе и в папке только растут;
+  // по кругу — новый проход с новым случайным шагом. Перед этим — await Similar.prepare(all)
+  if (mode === 'smart') return strideOrder(Similar.uniques(all), n, -1, true);
   return all.slice();
 }
 // Для «умного» режима сначала нужно посчитать серии (асинхронно, с кэшем)
@@ -1151,7 +1156,7 @@ async function preparePlaylist(all, mode, onProgress) { if (mode === 'smart') aw
 // Дошли до конца — новый проход по ещё не показанным, и так пока не покажем все.
 // Результат — перестановка всего списка; у массива есть .passStarts: Map(индекс → {pass, left}) для подсказки на экране.
 // startIdx >= 0: первый проход начинается ровно с этого файла (переход «слайд-шоу отсюда» с карты).
-function strideOrder(all, n, startIdx) {
+function strideOrder(all, n, startIdx, single = false) {   // single — только один проход (для «Умного»)
   const step = () => 1 + Math.floor(Math.random() * (2 * n - 1));
   const out = []; out.passStarts = new Map();
   let rest = all.slice(), pass = 0;
@@ -1163,6 +1168,7 @@ function strideOrder(all, n, startIdx) {
     out.passStarts.set(out.length, { pass, left: rest.length });
     for (; pos < rest.length; pos += step()) { out.push(rest[pos]); picked.add(pos); }
     rest = rest.filter((_, i) => !picked.has(i));
+    if (single) break;
   }
   return out;
 }
@@ -1235,7 +1241,8 @@ const Similar = (() => {
     for (const x of seq) {
       const prev = cur[cur.length - 1];
       const a = sigMem.get(x.e.key), b = prev && sigMem.get(prev.e.key);
-      const same = prev && a && b && !isVideo(x.e) && !isVideo(prev.e) && (
+      const twins = prev && (x.e.twin === prev.e || prev.e.twin === x.e || x.e.rawTwin === prev.e || prev.e.rawTwin === x.e);
+      const same = twins || prev && a && b && !isVideo(x.e) && !isVideo(prev.e) && (
         (x.t != null && prev.t != null && Math.abs(x.t - prev.t) <= 180 && ncc(a.v, b.v) >= T) ||
         ((x.t == null || prev.t == null) && ncc(a.v, b.v) >= Math.max(T, 0.95)));
       if (!same && cur.length) { allSeries.push(cur); cur = []; }
@@ -1245,6 +1252,7 @@ const Similar = (() => {
     // в сериях из нескольких кадров — выбираем самый резкий
     const rep = new Map(); let nSeries = 0, sdone = 0;
     const multi = allSeries.filter(s => s.length > 1), total = multi.reduce((n, s) => n + s.length, 0);
+    const picked = [];                                   // [позиция первого кадра серии в списке, выбранный кадр]
     for (const sr of allSeries) {
       let best = sr[0];
       if (sr.length > 1) {
@@ -1252,9 +1260,12 @@ const Similar = (() => {
         for (const x of sr) { const v = await sharpOf(x.e); if (v > bv) { bv = v; best = x; } if (++sdone % 5 === 0) onProgress && onProgress(`Выбор самого резкого кадра: ${sdone} / ${total}`); }
       }
       for (const x of sr) rep.set(x.e.key, best.e.key);
+      picked.push([Math.min(...sr.map(x => x.i)), best.e]);
     }
-    const keep = new Set(rep.values());
-    const res = { thr: T, rep, uniques: list.filter(e => keep.has(e.key)), series: nSeries };
+    // серия стоит в показе на месте своего ПЕРВОГО кадра в списке — какой бы кадр из неё ни был выбран
+    // (иначе, например, выбранный RAW из папки «RAW» уезжал бы в конец, и порядок выглядел бы перемешанным)
+    picked.sort((p1, p2) => p1[0] - p2[0]);
+    const res = { thr: T, rep, uniques: picked.map(x => x[1]), series: nSeries };
     groups.set(list, res);
     return res;
   }
@@ -1274,7 +1285,7 @@ function buildFrom(all, mode, n, startKey) {
   const i = Math.max(0, all.findIndex(e => e.key === startKey));
   if (mode === 'random') { const rest = all.slice(); const [first] = rest.splice(i, 1); return [first, ...shuffle(rest)]; }
   if (mode === 'nth') return strideOrder(all, n, i);
-  if (mode === 'smart') { const u = Similar.uniques(all), rk = Similar.repOf(all, startKey); return strideOrder(u, n, Math.max(0, u.findIndex(e => e.key === rk))); }
+  if (mode === 'smart') { const u = Similar.uniques(all), rk = Similar.repOf(all, startKey); return strideOrder(u, n, Math.max(0, u.findIndex(e => e.key === rk)), true); }
   return all;            // по порядку: весь список, старт с индекса i (см. startIndex)
 }
 /* ============================ индекс метаданных ============================ */
@@ -2245,9 +2256,9 @@ const Show = (() => {
   // Крупно в углу — выбранные счётчики
   function paintBig() {
     const b = $('bigCnt'), lines = [];
-    if ($('bigShow').checked && cnt.pos) lines.push(`${cnt.pos[0]} / ${cnt.pos[1]}`);
-    if ($('bigAll').checked && cnt.all) lines.push(`<small>в наборе</small>${cnt.all[0]} / ${cnt.all[1]}`);
-    if ($('bigDir').checked && cnt.dir) lines.push(`<small>${esc(cnt.dir[2])}</small>${cnt.dir[0]} / ${cnt.dir[1]}`);
+    if ($('bigShow').checked && cnt.pos) lines.push(`<div class="bc"><small>Фото в последовательности</small>${cnt.pos[0]} / ${cnt.pos[1]}</div>`);
+    if ($('bigAll').checked && cnt.all) lines.push(`<div class="bc"><small>Из набора</small>${cnt.all[0]} / ${cnt.all[1]}</div>`);
+    if ($('bigDir').checked && cnt.dir) lines.push(`<div class="bc"><small>В папке: ${esc(cnt.dir[2])}</small>${cnt.dir[0]} / ${cnt.dir[1]}</div>`);
     b.innerHTML = lines.join('');
     b.className = (lines.length && open ? 'on ' : '') + ((document.querySelector('input[name=bigPos]:checked') || {}).value || 'tr');
   }
@@ -2831,20 +2842,22 @@ async function scanGps({ fit = true } = {}) {
   try {
     const r = await ensureMeta(all, (d, n) => { progress(d, n); status(`Чтение метаданных: ${d} / ${n}`); });
     const pts = [];
-    for (const e of all) { const v = metaMem.get(e.key); if (v && v.lat != null) pts.push({ lat: v.lat, lon: v.lon, date: v.date, entry: e }); }
+    const withRaw = $('mapRaw').checked;
+    for (const e of all) { const v = metaMem.get(e.key); if (v && v.lat != null && (withRaw || !RAW_RE.test(e.name))) pts.push({ lat: v.lat, lon: v.lon, date: v.date, entry: e }); }
     MapView.setPoints(pts, { fit });
     const sec = ((performance.now() - t0) / 1000).toFixed(1);
     status(`Фото с геометками: ${pts.length} из ${all.length}${filterActive() ? ' (с фильтром)' : ''} · прочитано ${r.read}, из кэша ${r.fromCache + r.cached} · ${sec} с`);
   } finally { progress(null); $('scan').disabled = false; renderCams(); }
 }
 $('scan').onclick = () => scanGps();
+$('mapRaw').addEventListener('change', () => { saveSettings(); if (mapAll.length) scanGps({ fit: false }); });
 $('clearCache').onclick = async () => { await DB.clear('meta').catch(() => {}); metaMem.clear(); gpsMem.clear(); status('Кэш метаданных очищен.'); };
 
 /* ============================ настройки ============================ */
 function saveSettings() {
   store('settings', {
     scope: document.querySelector('input[name=scope]:checked').value, mode: document.querySelector('input[name=mode]:checked').value,
-    simThr: $('simThr').value, rawBadgeOn: $('rawBadgeOn').checked, metaOn: $('metaOn').checked,
+    mapRaw: $('mapRaw').checked, simThr: $('simThr').value, rawBadgeOn: $('rawBadgeOn').checked, metaOn: $('metaOn').checked,
     bigShow: $('bigShow').checked, bigDir: $('bigDir').checked, bigAll: $('bigAll').checked, bigPos: (document.querySelector('input[name=bigPos]:checked') || {}).value, auto: $('auto').checked, placeOn: $('placeOn').checked, sortBy: sortOpts().by, sortDir: sortOpts().dir, density: $('density').value, thumbSize: $('thumbSize').value, coverZoom: $('coverZoom').value, rawSkip: $('rawSkip').checked,
     nth: $('nth').value, interval: $('interval').value, caption: $('caption').checked, fade: $('fade').checked, loop: $('loop').checked,
   });
@@ -2858,7 +2871,7 @@ function saveSettings() {
   $('auto').checked = s.auto !== false;
   if (s.simThr) { $('simThr').value = s.simThr; $('simThr').dispatchEvent(new Event('input')); }
   $('placeOn').checked = !!s.placeOn;
-  $('rawBadgeOn').checked = !!s.rawBadgeOn; $('metaOn').checked = !!s.metaOn;
+  $('mapRaw').checked = !!s.mapRaw; $('rawBadgeOn').checked = !!s.rawBadgeOn; $('metaOn').checked = !!s.metaOn;
   $('bigShow').checked = !!s.bigShow; $('bigDir').checked = !!s.bigDir; $('bigAll').checked = !!s.bigAll;
   { const r = s.bigPos && document.querySelector(`input[name=bigPos][value="${s.bigPos}"]`); if (r) r.checked = true; }
   for (const [n, v] of [['sortBy', s.sortBy], ['sortDir', s.sortDir]]) { const r = v && document.querySelector(`input[name=${n}][value="${v}"]`); if (r) r.checked = true; } if (s.thumbSize) $('thumbSize').value = s.thumbSize;
