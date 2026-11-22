@@ -68,7 +68,7 @@
   .seg.corner label { padding: 1px 5px; font-size: 11px; }
   .sel-l { margin-left: 68px; }
   #playOpts:not(:has(#auto:checked)) .chip:has(#interval) { opacity: .45; }
-  #playOpts:not(:has(input[name=mode][value=smart]:checked)) .smartonly { display: none; }
+  #filterCard:not(:has(#hideSim:checked)) #simThr, #filterCard:not(:has(#hideSim:checked)) #simVal { opacity: .4; }
   #playOpts:not(:has(input[name=mode][value=nth]:checked)):not(:has(input[name=mode][value=smart]:checked)) .nlab { opacity: .45; }
   .seg label.nlab { flex: 0 0 auto; cursor: default; }
   .sel-l { margin-top: 4px; }
@@ -289,7 +289,7 @@
 <aside>
   <header class="top">
     <h1>letseetheworld <span style="font-weight:500">PhotoViewer</span></h1>
-    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-23.2</span>
+    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-23.3</span>
   </header>
 
   <section class="card">
@@ -331,12 +331,10 @@
           <label title="Полностью случайно, без повторов"><input type="radio" name="mode" value="random">Случайно</label>
           <label title="По порядку со случайным шагом, в среднем N (например 1, 10, 15, 23…); дойдя до конца — новый проход по ещё не показанным">
             <input type="radio" name="mode" value="nth">Шаг</label>
-          <label title="Умный: из каждой серии похожих кадров — один (самый резкий); один проход вперёд по уникальным со случайным шагом ≈ N (все номера растут), по кругу — новый проход. N = 1 — все уникальные подряд">
+          <label title="Умный: равномерно по времени съёмки — часы, где фото немного, показываются целиком, а «густые» часы прореживаются в среднем в N раз (случайный выбор). Идёт по времени. N = 1 — все фото">
             <input type="radio" name="mode" value="smart">Умный</label>
           <label class="nlab" title="Средний шаг N для режимов «Шаг» и «Умный»">N<input type="number" id="nth" min="1" max="1000" value="5" class="inl"></label>
         </div></div>
-      <div class="orow smartonly" title="Насколько похожими должны быть кадры, чтобы считаться одной серией"><span>Похожесть</span>
-        <div class="row" style="gap:6px;flex-wrap:nowrap"><input type="range" id="simThr" min="4" max="20" value="12" class="grow"><span id="simVal" class="hint"></span></div></div>
       <div class="orow"><span>Сортировка</span>
         <div class="row" style="gap:6px;flex-wrap:nowrap">
           <div class="seg grow">
@@ -398,6 +396,11 @@
       <label class="chip" title="CR2, CR3, NEF, ARW, DNG, RAF, ORF, RW2…"><input type="checkbox" data-fmt="raw" checked>RAW</label>
       <label class="chip" title=".heic, .heif (iPhone)"><input type="checkbox" data-fmt="heic" checked>HEIC</label>
       <label class="chip" title="PNG, WebP, GIF, TIFF, BMP, AVIF"><input type="checkbox" data-fmt="other" checked>другие</label>
+    </div>
+    <div class="row" style="gap:6px;margin-top:6px;flex-wrap:nowrap" title="Из каждой серии похожих кадров (бёрст, дубли, RAW и его JPG) оставить один — самый резкий. Действует везде: слайд-шоу, галерея, карта">
+      <label class="chip" style="padding:1px 7px;font-size:11px"><input type="checkbox" id="hideSim">Скрыть похожие</label>
+      <input type="range" id="simThr" min="4" max="20" value="12" class="grow" title="Похожесть: влево — только почти одинаковые, вправо — и просто похожие">
+      <span id="simVal" class="hint"></span>
     </div>
     <details class="more" id="camBox">
       <summary><span id="camSum">Камеры</span></summary>
@@ -1095,7 +1098,7 @@ async function collect(scope = 'checked', { cached = false, nofilter = false } =
     let favs = all.filter(e => Fav.has(e));
     if (!favs.length) { notice('Отмеченные фото не найдены в подключённых папках (папку убрали или переименовали?).'); return null; }
     if (!nofilter) favs = await applyFilter(favs);
-    return nofilter ? favs : sortList(favs);
+    return nofilter ? favs : hideSimilar(await sortList(favs));
   }
   const ck = scope + '|' + (scope === 'selected' && selected ? selected.srcId + '/' + selected.path : '');
   let raw = cached && listCache.get(ck);
@@ -1103,7 +1106,15 @@ async function collect(scope = 'checked', { cached = false, nofilter = false } =
   if (nofilter) return raw;
   const out = await applyFilter(raw);                             // всегда: хотя бы чтобы отсечь видео, если оно выключено
   if (!out.length) { notice(`Фильтр скрыл все ${raw.length} фото этого набора — проверьте карточку «Фильтр».`); return null; }
-  return sortList(out);
+  return hideSimilar(await sortList(out));
+}
+// Фильтр «Скрыть похожие»: из каждой серии — один (самый резкий) кадр, на месте первого кадра серии
+async function hideSimilar(list) {
+  if (!flt.hideSim || list.length < 2) return list;
+  await Similar.prepare(list, (t) => { status(t); });
+  const g = Similar.info(list);
+  status(`Похожие скрыты: осталось ${g.uniques.length} из ${list.length} (серий: ${g.series})`);
+  return g.uniques;
 }
 // Сортировка: по имени (порядок обхода папок) или по дате съёмки из EXIF; фото без даты — всегда в конце
 const sortOpts = () => ({ by: (document.querySelector('input[name=sortBy]:checked') || {}).value || 'name',
@@ -1144,13 +1155,35 @@ async function collectFresh(scope) {
 function buildPlaylist(all, mode, n) {
   if (mode === 'random') return shuffle(all.slice());
   if (mode === 'nth') return strideOrder(all, n, -1);
-  // «Умный»: один проход вперёд по уникальным кадрам — номера в показе, в наборе и в папке только растут;
-  // по кругу — новый проход с новым случайным шагом. Перед этим — await Similar.prepare(all)
-  if (mode === 'smart') return strideOrder(Similar.uniques(all), n, -1, true);
+  if (mode === 'smart') return timeSpread(all, n);                        // перед этим — await preparePlaylist (даты)
   return all.slice();
 }
 // Для «умного» режима сначала нужно посчитать серии (асинхронно, с кэшем)
-async function preparePlaylist(all, mode, onProgress) { if (mode === 'smart') await Similar.prepare(all, onProgress); }
+async function preparePlaylist(all, mode, onProgress) {
+  if (mode === 'smart') await ensureMeta(all, (d, n) => onProgress && onProgress(`Чтение дат съёмки: ${d} / ${n}`));
+}
+// «Умный»: равномерно по времени съёмки. Фото делятся по часам каждого дня; час, где фото не больше медианы
+// (обычного для этого набора количества), показывается целиком, а сверх медианы — в среднем каждое N-е
+// (случайный, но равномерно разнесённый по часу выбор). Порядок — по времени. N = 1 — все фото.
+const tsecOf = (e) => { const m = /^(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d):(\d\d)/.exec((metaMem.get(e.key) || {}).date || ''); return m ? Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]) / 1000 : null; };
+function timeSpread(all, n) {
+  const items = all.map((e, i) => ({ e, i, t: tsecOf(e) }));
+  const dated = items.filter(x => x.t != null).sort((a, b) => a.t - b.t || a.i - b.i), undated = items.filter(x => x.t == null).map(x => x.e);
+  const buckets = [];
+  for (const x of dated) { const h = Math.floor(x.t / 3600); if (!buckets.length || buckets[buckets.length - 1].h !== h) buckets.push({ h, a: [] }); buckets[buckets.length - 1].a.push(x.e); }
+  const counts = buckets.map(b => b.a.length).sort((a, b) => a - b), med = counts.length ? counts[Math.floor(counts.length / 2)] : 1;
+  const out = []; out.timeInfo = { hours: buckets.length, median: med };
+  for (const b of buckets) {
+    const c = b.a.length;
+    let k = c;
+    if (n > 1 && c > med) { const x = med + (c - med) / n; k = Math.floor(x) + (Math.random() < x % 1 ? 1 : 0); }
+    if (k >= c) { out.push(...b.a); continue; }
+    for (let j = 0; j < k; j++) out.push(b.a[Math.min(c - 1, Math.floor((j + Math.random()) * c / k))]);   // по одному из k равных отрезков часа
+  }
+  const res = out.concat(n > 1 ? strideOrder(undated, n, -1, true) : undated);  // без даты — в конце
+  res.timeInfo = out.timeInfo;
+  return res;
+}
 
 // Режим «по порядку со случайным шагом»: идём по списку вперёд, шаг случайный, равномерно 1…2N−1 (среднее = N).
 // Дошли до конца — новый проход по ещё не показанным, и так пока не покажем все.
@@ -1285,7 +1318,12 @@ function buildFrom(all, mode, n, startKey) {
   const i = Math.max(0, all.findIndex(e => e.key === startKey));
   if (mode === 'random') { const rest = all.slice(); const [first] = rest.splice(i, 1); return [first, ...shuffle(rest)]; }
   if (mode === 'nth') return strideOrder(all, n, i);
-  if (mode === 'smart') { const u = Similar.uniques(all), rk = Similar.repOf(all, startKey); return strideOrder(u, n, Math.max(0, u.findIndex(e => e.key === rk)), true); }
+  if (mode === 'smart') {                                     // с выбранного фото и дальше по времени
+    const full = timeSpread(all, n), start = all[i], ts = tsecOf(start);
+    let k = full.indexOf(start);
+    if (k < 0) { k = ts == null ? full.length : full.findIndex(e => (tsecOf(e) ?? Infinity) > ts); if (k < 0) k = full.length; full.splice(k, 0, start); }
+    return full.slice(k);
+  }
   return all;            // по порядку: весь список, старт с индекса i (см. startIndex)
 }
 /* ============================ индекс метаданных ============================ */
@@ -1401,14 +1439,14 @@ const fmtOf = (name) => VIDEO_RE.test(name) ? 'video' : RAW_RE.test(name) ? 'raw
 const FMT_DEFAULT = { photo: true, video: false, jpg: true, raw: true, heic: true, other: true };
 const flt = (() => {
   const v = load('filter', null) || {};
-  return { fmt: Object.assign({}, FMT_DEFAULT, v.fmt || {}),
+  return { hideSim: !!v.hideSim, fmt: Object.assign({}, FMT_DEFAULT, v.fmt || {}),
            offModels: new Set(v.offModels || []), known: v.known || [] };      // known — камеры, встречавшиеся раньше
 })();
 const NO_CAM = '';                    // фото без сведений о камере
 const camLabel = (m) => m || 'нет данных о камере';
-function saveFilter() { store('filter', { fmt: flt.fmt, offModels: [...flt.offModels], known: flt.known }); }
+function saveFilter() { store('filter', { fmt: flt.fmt, offModels: [...flt.offModels], known: flt.known, hideSim: flt.hideSim }); }
 // «включён» — если что-то отличается от умолчания (видео по умолчанию выключено — это не «фильтр»)
-const filterActive = () => Object.keys(FMT_DEFAULT).some(k => flt.fmt[k] !== FMT_DEFAULT[k]) || flt.offModels.size > 0;
+const filterActive = () => Object.keys(FMT_DEFAULT).some(k => flt.fmt[k] !== FMT_DEFAULT[k]) || flt.offModels.size > 0 || flt.hideSim;
 const passFmt = (name) => { const f = fmtOf(name); return f === 'video' ? flt.fmt.video : flt.fmt.photo && flt.fmt[f] !== false; };
 async function applyFilter(list) {
   let out = list.filter(e => passFmt(e.name));
@@ -1453,8 +1491,11 @@ document.querySelectorAll('#fmtChips input').forEach(i => {
 });
 $('camAll').onclick = () => { flt.offModels.clear(); renderCams(); filterChanged(); };
 $('camNone').onclick = () => { for (const m of flt.known) flt.offModels.add(m); renderCams(); filterChanged(); };
+$('hideSim').checked = flt.hideSim;
+$('hideSim').onchange = () => { flt.hideSim = $('hideSim').checked; filterChanged(); };
+$('simThr').addEventListener('change', () => { saveSettings(); if (flt.hideSim) filterChanged(); });
 $('fltReset').onclick = () => {
-  Object.assign(flt.fmt, FMT_DEFAULT); flt.offModels.clear();
+  Object.assign(flt.fmt, FMT_DEFAULT); flt.offModels.clear(); flt.hideSim = false; $('hideSim').checked = false;
   document.querySelectorAll('#fmtChips input').forEach(i => i.checked = flt.fmt[i.dataset.fmt]);
   renderCams(); filterChanged();
 };
@@ -2414,8 +2455,8 @@ const Show = (() => {
     if (o.caption !== showCap) { showCap = o.caption; cap.hidden = !showCap; paintCap(); }   // и в режиме просмотра
     paintBig();
     if (viewMode) { schedule(); return; }
-    if ((mode !== curMode || n !== curN || (mode === 'smart' && (Similar.info(base) || {}).thr !== 0.97 - (+$('simThr').value - 4) * 0.01)) && base.length > 1) {
-      if (mode === 'smart' && (!Similar.info(base) || Similar.info(base).thr !== 0.97 - (+$('simThr').value - 4) * 0.01)) {   // серии ещё не посчитаны
+    if ((mode !== curMode || n !== curN) && base.length > 1) {
+      if (mode === 'smart' && base.some(e => !metaMem.has(e.key))) {                      // даты ещё не прочитаны
         curMode = ''; preparePlaylist(base, mode, (t) => flash(t)).then(() => { if (open) applySettings(); }); return;
       }
       const e = shown || list[idx];
@@ -2424,10 +2465,10 @@ const Show = (() => {
       idx = mode === 'order' ? Math.max(0, base.findIndex(x => x.key === e.key)) : 0;
       rebuild = mode === 'order' ? null : () => buildPlaylist(base, mode, n);
       walk = null;
-      const g = mode === 'smart' && Similar.info(base);
-      flash(mode === 'smart' ? `Умный: ${g.uniques.length} уникальных из ${base.length}${n > 1 ? `, шаг ≈ ${n}` : ''}`
+      flash(mode === 'smart' ? `Умный: ${list.length} из ${base.length} фото, равномерно по времени${n > 1 ? ` (густые часы — каждое ≈${n}-е)` : ''}`
         : { order: 'Порядок: подряд', random: 'Порядок: случайно', nth: `Порядок: шаг ≈ ${n}` }[mode]);
       const note = `${idx + 1} / ${list.length}`;
+      cnt.pos = [idx + 1, list.length];                 // крупный счётчик «в последовательности» — тоже по новому списку
       capS.note = note; paintCap(); if (shown) counters(shown, token);
     }
     schedule();
@@ -2612,10 +2653,10 @@ async function startShow(scope) {
   lastShowAll = all;
   const { mode, n } = modeOpts();
   await preparePlaylist(all, mode, (t) => status(t));
-  if (mode === 'smart') { const g = Similar.info(all); status(`Уникальных кадров: ${g.uniques.length} из ${all.length} (серий похожих: ${g.series})`); }
+
   const rebuild = () => buildPlaylist(all, mode, n);
   const list = rebuild();
-  if (mode !== 'smart') status(`Файлов найдено: ${all.length}, в показе: ${list.length}`);
+  status(`Файлов найдено: ${all.length}, в показе: ${list.length}${mode === 'smart' ? ' (равномерно по времени)' : ''}`);
   Show.start({ list, rebuild: mode === 'order' ? null : rebuild, ...showOptions() });
 }
 $('start').onclick = () => startShow(document.querySelector('input[name=scope]:checked').value);
