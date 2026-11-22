@@ -246,7 +246,7 @@
 <aside>
   <header class="top">
     <h1>letseetheworld <span style="font-weight:500">PhotoViewer</span></h1>
-    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-22.3</span>
+    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-22.4</span>
   </header>
 
   <section class="card">
@@ -421,7 +421,7 @@
 </div>
 
 <div id="show">
-  <img id="imgA" alt=""><img id="imgB" alt=""><video id="vid" playsinline controls preload="auto"></video>
+  <img id="imgA" alt="" referrerpolicy="no-referrer"><img id="imgB" alt="" referrerpolicy="no-referrer"><video id="vid" playsinline controls preload="auto"></video>
   <div id="place"></div><div id="cap"></div><div id="osd"></div><div id="bar"></div>
   <div id="showPanel" hidden><div class="sp-h"><b>Настройки показа</b><span class="grow"></span><button data-a="opts" title="Закрыть (S)">✕</button></div></div>
   <div id="tools"><button data-a="mini" title="Мини-карта (G)">📍 Мини-карта</button><button data-a="map" title="Прервать и перейти к карте (M)">🗺 К карте</button><button data-a="play" class="viewonly" title="Слайд-шоу с этого фото (Пробел)">▶ Слайд-шоу отсюда</button><button data-a="pause" class="showonly" title="Пауза (Пробел)">⏯</button><button data-a="opts" title="Настройки показа (S)">⚙</button><button data-a="fav" id="favBtn" title="В избранное (L)">☆</button><button data-a="close" title="Выход (Esc)">✕</button></div>
@@ -589,12 +589,12 @@ const YA = (() => {
   const downloadHref = async (path) => (await api('/resources/download', { path })).href;
   async function download(path) {
     const j = await api('/resources/download', { path });
-    const r = await req(j.href);
+    const r = await req(j.href, { referrerPolicy: 'no-referrer' });
     if (!r.ok) throw new Error('скачивание: ' + r.status);
     return r.blob();
   }
   async function preview(url) {        // превью Диска отдаются по тому же токену
-    const r = await req(url, { headers: { Authorization: 'OAuth ' + token } });
+    const r = await req(url, { headers: { Authorization: 'OAuth ' + token }, referrerPolicy: 'no-referrer' });
     if (!r.ok) throw new Error('превью: ' + r.status);
     return r.blob();
   }
@@ -676,8 +676,12 @@ const YaUI = (() => {
     try { const t0 = performance.now(); const b = await YA.download(img.path); line(true, `Скачивание оригинала: ок (${(b.size / 2 ** 20).toFixed(1)} МБ, ${((performance.now() - t0) / 1000).toFixed(1)} с)`); }
     catch (e) {
       line(false, 'Скачивание оригинала в память: ' + e.message);
-      try { const im = new Image(); im.src = await YA.downloadHref(img.path); await im.decode(); line(true, `Показ по прямой ссылке: ок (${im.naturalWidth}×${im.naturalHeight}) — фото будут показываться так, но без чтения EXIF и RAW`); }
-      catch (e2) { line(false, 'Показ по прямой ссылке: ' + (e2.message || 'не удалось')); }
+      let href = '';
+      try { href = await YA.downloadHref(img.path); const im = new Image(); im.referrerPolicy = 'no-referrer'; im.src = href; await im.decode(); line(true, `Показ по прямой ссылке: ок (${im.naturalWidth}×${im.naturalHeight}) — фото будут показываться так, но без чтения EXIF и RAW`); }
+      catch (e2) {
+        line(false, 'Показ по прямой ссылке: ' + (e2.message || 'не удалось'));
+        if (href) { const a = document.createElement('a'); a.href = href; a.target = '_blank'; a.rel = 'noreferrer'; a.textContent = '→ открыть эту ссылку в новой вкладке (что ответит Яндекс?)'; out.after(a); }
+      }
     }
   }
   return { open, render };
@@ -1067,7 +1071,7 @@ async function collectFresh(scope) {
   let all = [], base = 0;
   for (const { src, opt } of jobs) {
     try {
-      const list = await listSource(src, opt, (n) => status(`Чтение списка файлов… ${base + n}`));
+      const list = linkTwins(await listSource(src, opt, (n) => status(`Чтение списка файлов… ${base + n}`)));
       all = all.concat(list); base = all.length;
     } catch (e) { notice(`Ошибка чтения «${src.name}»: ${e.message}`, true); return null; }
   }
@@ -1261,6 +1265,10 @@ async function ensureMeta(list, onProgress) {
           pending.push([ck, v]);
           if (pending.length >= 200) await DB.putMany('meta', pending.splice(0)).catch(() => {});
         }
+        if (e.twin && (v.lat == null || !v.date || !v.model)) {         // не хватает данных — берём у JPG-двойника
+          if (!metaMem.has(e.twin.key)) await ensureMeta([e.twin]);
+          v = mergeTwin(v, metaMem.get(e.twin.key));
+        }
         remember(e, v);
       } catch (err) { console.warn(e.path, err); }
       done++;
@@ -1272,6 +1280,20 @@ async function ensureMeta(list, onProgress) {
   if (todo.length) renderCams();
   return { fromCache, read: todo.length - fromCache, cached: list.length - todo.length };
 }
+// RAW + JPG/HEIC с тем же именем в той же папке — «двойники»: у RAW берём геометку/дату/камеру JPG,
+// миниатюру JPG, а если RAW не проявляется — показываем JPG
+function linkTwins(list) {
+  const plain = new Map();
+  for (const e of list) if (!RAW_RE.test(e.name) && !isVideo(e)) {
+    const k = e.dir + '/' + baseName(e.name), cur = plain.get(k);
+    if (!cur || /\.jpe?g$/i.test(e.name)) plain.set(k, e);            // JPG приоритетнее HEIC/PNG
+  }
+  for (const e of list) if (RAW_RE.test(e.name)) { const t = plain.get(e.dir + '/' + baseName(e.name)); if (t) e.twin = t; }
+  return list;
+}
+const mergeTwin = (v, t) => t ? Object.assign({}, v, {
+  lat: v.lat != null ? v.lat : t.lat, lon: v.lat != null ? v.lon : t.lon,
+  date: v.date || t.date, model: v.model || t.model, fromTwin: v.lat == null && t.lat != null }) : v;
 async function readGps(entry, file) {
   if (gpsMem.has(entry.key)) return gpsMem.get(entry.key);
   if (entry.cloud) { remember(entry, entry.cloud.meta); return gpsMem.get(entry.key); }
@@ -1589,6 +1611,7 @@ const Thumbs = (() => {
     }
   }
   async function makeThumb(entry, big) {
+    if (entry.twin && RAW_RE.test(entry.name)) return makeThumb(entry.twin, big);   // RAW: миниатюра JPG-двойника — мгновенно
     if (isVideo(entry) && entry.saf) return videoFrame(entry.saf.url, big ? 360 : 160);
     if (entry.saf && !big && /jpg|heic/.test(fmtOf(entry.name))) {      // Android: встроенная миниатюра из первых 128 КБ
       try {
@@ -1604,6 +1627,12 @@ const Thumbs = (() => {
     if (entry.cloud && entry.cloud.preview) {
       try { return canvasUrl(await createImageBitmap(await YA.preview(entry.cloud.preview)), big ? 360 : 160, 1); }
       catch (e) { console.warn('превью Диска:', e.message); }     // не вышло — пробуем из оригинала
+    }
+    if (entry.cloud) {                                             // CORS не даёт прочитать — отдаём прямую ссылку, <img> загрузит сам
+      try { await entry.getFile(); } catch (e) {
+        if (RAW_RE.test(entry.name) || isVideo(entry)) throw e;
+        return YA.downloadHref(entry.cloud.path);
+      }
     }
     const file = await entry.getFile();
     if (RAW_RE.test(file.name)) {                                    // RAW: кэш в IndexedDB (проявка дорогая)
@@ -1857,7 +1886,7 @@ const Gallery = (() => {
       const t = document.createElement('div'); t.className = 'tile'; t.dataset.i = i; t.title = e.path;
       const g = gpsMem.get(e.key);
       const vd = isVideo(e) ? `<span class="vb">▶ ${fmtDur((metaMem.get(e.key) || {}).dur)}</span>` : '';
-      t.innerHTML = `<img alt="">${vd}<span class="nm">${esc(e.name)}</span><button class="fav${Fav.has(e) ? ' on' : ''}" title="Избранное (L)">${Fav.has(e) ? '★' : '☆'}</button>` +
+      t.innerHTML = `<img alt="" referrerpolicy="no-referrer">${vd}<span class="nm">${esc(e.name)}</span><button class="fav${Fav.has(e) ? ' on' : ''}" title="Избранное (L)">${Fav.has(e) ? '★' : '☆'}</button>` +
         (g ? '<button class="geo" title="Показать на карте">📍</button>' : '');
       frag.appendChild(t);
     });
@@ -1958,10 +1987,14 @@ const Show = (() => {
       let file = null, blob;
       try { file = await e.getFile(); blob = await displayBlob(file); }
       catch (err) {
+        if (e.twin && RAW_RE.test(e.name)) {                          // RAW не проявился — показываем JPG-двойник
+          const r2 = await prep(e.twin);
+          if (r2.ok) return Object.assign({}, r2, { twinUsed: err.message || String(err), noFree: true, orig: null, origUrl: null });
+        }
         // Яндекс.Диск не дал скачать файл в память (CORS) — показываем по прямой ссылке: <img> это разрешено
         if (e.cloud && !RAW_RE.test(e.name)) {
           try {
-            const href = await YA.downloadHref(e.cloud.path), im = new Image(); im.src = href; await im.decode();
+            const href = await YA.downloadHref(e.cloud.path), im = new Image(); im.referrerPolicy = 'no-referrer'; im.src = href; await im.decode();
             return { url: href, file: null, ok: true, w: im.naturalWidth, h: im.naturalHeight };
           } catch (er) { err = er; }
         }
@@ -1985,7 +2018,7 @@ const Show = (() => {
     while (cache.size > 8) { const k = cache.keys().next().value; const old = cache.get(k); cache.delete(k); old.then(freeR).catch(() => {}); }
     return p;
   }
-  function freeR(r) { if (r.url && r.url.startsWith('blob:')) URL.revokeObjectURL(r.url); if (r.origUrl) URL.revokeObjectURL(r.origUrl); }
+  function freeR(r) { if (r.noFree) return; if (r.url && r.url.startsWith('blob:')) URL.revokeObjectURL(r.url); if (r.origUrl) URL.revokeObjectURL(r.origUrl); }
   function dropCache() { for (const p of cache.values()) p.then(freeR).catch(() => {}); cache.clear(); }
   function flash(t) { osd.textContent = t; osd.classList.add('on'); clearTimeout(osdTimer); osdTimer = setTimeout(() => osd.classList.remove('on'), 1400); }
 
@@ -2063,6 +2096,7 @@ const Show = (() => {
     errorsInRow = 0;
     const ps = list.passStarts && list.passStarts.get(i);
     if (ps && ps.pass > 1) flash(`Проход ${ps.pass}: осталось ${ps.left} непоказанных`);
+    if (r.twinUsed) flash(`RAW не показан (${r.twinUsed}) — показан JPG с тем же именем`);
     if (i + 1 < list.length) prep(list[i + 1]); if (i > 0) prep(list[i - 1]);   // предзагрузка соседей
     schedule();
   }
@@ -2474,7 +2508,7 @@ const MapView = (() => {
         el.title = `${n} фото — щёлкните, чтобы приблизить`;
       } else {
         el.className = 'ph'; el.style.width = el.style.height = size + 'px';
-        el.innerHTML = '<img alt="">' + (isVideo(points[pr.i].entry) ? '<span class="vb">▶</span>' : ''); el.title = points[pr.i].entry.path;
+        el.innerHTML = '<img alt="" referrerpolicy="no-referrer">' + (isVideo(points[pr.i].entry) ? '<span class="vb">▶</span>' : ''); el.title = points[pr.i].entry.path;
         fillThumb(el, pr.i);
       }
       el.style.zIndex = Math.round((90 - lat) * 1000);       // южнее — выше (как в Leaflet), без хаотичного перекрытия
