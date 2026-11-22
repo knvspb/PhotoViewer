@@ -9,6 +9,20 @@
   "server": {
     "androidScheme": "https",
     "hostname": "localhost",
-    "allowNavigation": ["oauth.yandex.ru", "passport.yandex.ru", "sso.passport.yandex.ru", "id.yandex.ru", "*.yandex.ru", "yandex.ru", "*.yandex.net", "knvspb.github.io"]
+    "allowNavigation": [
+      "oauth.yandex.ru",
+      "passport.yandex.ru",
+      "sso.passport.yandex.ru",
+      "id.yandex.ru",
+      "*.yandex.ru",
+      "yandex.ru",
+      "*.yandex.net",
+      "knvspb.github.io"
+    ]
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
   }
 }
