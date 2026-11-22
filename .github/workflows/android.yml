@@ -26,6 +26,8 @@ jobs:
           java-version: 21
       - name: Install and sync web app into the Android project
         working-directory: android-app
+        env:
+          YANDEX_CLIENT_SECRET: ${{ secrets.YANDEX_CLIENT_SECRET }}   # вход по коду на ТВ; в репозитории секрета нет
         run: |
           npm ci
           npm run sync

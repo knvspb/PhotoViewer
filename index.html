@@ -219,7 +219,10 @@
   .yadirs li { padding: 6px 10px; border-top: 1px solid var(--line); }
   .yadirs li:first-child { border-top: 0; }
   .yadirs li[data-p] { cursor: pointer; } .yadirs li[data-p]:hover { background: var(--hover); }
-  .yadirs .err, .diag { color: var(--danger); }
+  .yadirs .err, .diag, .mbox .err { color: var(--danger); }
+  .devcode { text-align: center; margin-top: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+  .devcode b { display: block; font-size: 20px; margin: 4px 0 8px; }
+  .devcode .code { font: 700 34px/1.2 ui-monospace, monospace; letter-spacing: .12em; margin: 6px 0 8px; }
   .diag { white-space: pre-wrap; font: 12px/1.5 ui-monospace, monospace; color: var(--text); background: var(--bg); padding: 8px; border-radius: 6px; margin-top: 8px; }
 
   /* --- галерея --- */
@@ -289,7 +292,7 @@
 <aside>
   <header class="top">
     <h1>letseetheworld <span style="font-weight:500">PhotoViewer</span></h1>
-    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-23.3</span>
+    <span id="ver" class="hint" title="Версия страницы. Если после обновления на GitHub она старая — Ctrl+F5">v2026-11-23.4</span>
   </header>
 
   <section class="card">
@@ -516,6 +519,8 @@ const safUrl = (uri) => '/_saf_/file?u=' + encodeURIComponent(uri);
 const rangeFile = (url, size, name) => ({ name, size, slice: (a, b) => ({ arrayBuffer: async () =>
   (await fetch(url, { headers: { Range: `bytes=${a}-${Math.min(b, size) - 1}` } })).arrayBuffer() }) });
 // ТВ-режим: управление пультом (в приложении без сенсорного экрана или по ?tv в адресе)
+// секреты сборки APK (lib/app-config.js создаётся только при сборке приложения)
+if (NATIVE) document.write('<script src="lib/app-config.js"><\/script>');
 const TV = /[?&]tv\b/.test(location.search) || (NATIVE && navigator.maxTouchPoints === 0);
 
 function status(msg) { $('status').textContent = msg || ''; }
@@ -670,7 +675,26 @@ const YA = (() => {
     if (x.gps_latitude != null && Number.isFinite(lat) && Number.isFinite(lon) && !(lat === 0 && lon === 0)) { v.lat = lat; v.lon = lon; }
     return v;
   }
-  return { get token() { return token; }, setToken, authUrl, takeFromHash, api, list, download, downloadHref, preview, metaOf, CorsError };
+  // Вход по коду устройства (для ТВ): https://yandex.ru/dev/id/doc/ru/codes/screen-code-oauth
+  // Нужен client_secret — он есть только в сборке APK (секрет репозитория YANDEX_CLIENT_SECRET), в веб-версии его нет.
+  const secret = () => (window.APP_CONFIG || {}).yaSecret || '';
+  async function deviceStart() {
+    const r = await fetch('https://oauth.yandex.ru/device/code', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `client_id=${CLIENT_ID}&device_name=${encodeURIComponent('PhotoViewer (Android)')}` });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.device_code) throw new Error(j.error_description || j.error || ('device/code ' + r.status));
+    return j;     // { device_code, user_code, verification_url, interval, expires_in }
+  }
+  async function devicePoll(code) {
+    const r = await fetch('https://oauth.yandex.ru/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `grant_type=device_code&code=${encodeURIComponent(code)}&client_id=${CLIENT_ID}&client_secret=${encodeURIComponent(secret())}` });
+    const j = await r.json().catch(() => ({}));
+    if (j.access_token) { setToken(j.access_token); return 'ok'; }
+    if (j.error === 'authorization_pending' || j.error === 'slow_down') return 'wait';
+    throw new Error(j.error_description || j.error || ('token ' + r.status));
+  }
+  return { get token() { return token; }, setToken, authUrl, takeFromHash, api, list, download, downloadHref, preview, metaOf, CorsError,
+    deviceStart, devicePoll, get canDevice() { return !!secret(); } };
 })();
 
 /* окно «Яндекс.Диск»: вход, выбор папки, проверка подключения */
@@ -684,8 +708,12 @@ const YaUI = (() => {
   function render() {
     if (!YA.token) {
       body.innerHTML = `
-        <p>PhotoViewer получит доступ <b>только на чтение</b> к вашему Диску. Токен хранится только в этом браузере.</p>
-        <div class="row"><button class="primary" data-a="auto">Войти через Яндекс</button></div>
+        <p>PhotoViewer получит доступ <b>только на чтение</b> к вашему Диску. Токен хранится только на этом устройстве.</p>
+        ${NATIVE ? (YA.canDevice ? `<div class="row"><button class="primary" data-a="device">Войти по коду с телефона</button></div>
+          <p class="hint">Рекомендуется для ТВ: на экране появится код, его нужно ввести на телефоне на ya.ru/device.</p>`
+          : `<p class="hint">Вход по коду недоступен: в эту сборку не добавлен секрет приложения Яндекса (YANDEX_CLIENT_SECRET).</p>`) : ''}
+        <div class="row"><button class="${NATIVE && YA.canDevice ? '' : 'primary'}" data-a="auto">Войти через Яндекс${NATIVE ? ' (в приложении)' : ''}</button></div>
+        <div id="yaDev"></div>
         <details class="more" style="margin-top:10px"><summary>Если автоматический вход не сработал — вручную</summary>
           <ol class="hint" style="padding-left:18px;margin:6px 0">
             <li><a href="${YA.authUrl(true)}" target="_blank" rel="noopener">Откройте страницу Яндекса</a> и разрешите доступ.</li>
@@ -718,11 +746,34 @@ const YaUI = (() => {
   }
   async function act(a) {
     if (a === 'auto') { sessionStorage.setItem('ya-pending', '1'); location.href = YA.authUrl(false); }
+    else if (a === 'device') deviceLogin();
     else if (a === 'save') { YA.setToken($('yaTok').value); render(); renderSources(); }
     else if (a === 'logout') { YA.setToken(null); render(); renderSources(); }
     else if (a === 'up') { if (cwd !== 'disk:/') { const up = cwd.replace(/\/[^/]+\/?$/, ''); browse(!up || up === 'disk:' ? 'disk:/' : up); } }
     else if (a === 'add') { addYaFolder(cwd); close(); }
     else if (a === 'check') diagnose();
+  }
+  // Вход по коду: показываем код, опрашиваем Яндекс, пока пользователь не подтвердит на телефоне
+  let devTimer = null;
+  async function deviceLogin() {
+    const box = $('yaDev'); clearTimeout(devTimer);
+    box.innerHTML = '<p class="hint">Получаю код…</p>';
+    try {
+      const d = await YA.deviceStart(), until = Date.now() + (d.expires_in || 300) * 1000;
+      const url = (d.verification_url || 'https://ya.ru/device').replace(/^https?:\/\//, '');
+      box.innerHTML = `<div class="devcode"><div class="hint">На телефоне откройте</div><b>${esc(url)}</b>
+        <div class="hint">и введите код</div><div class="code">${esc(d.user_code)}</div><div class="hint" id="yaDevSt">Жду подтверждения…</div></div>`;
+      const tick = async () => {
+        if (dlg.hidden) return;
+        if (Date.now() > until) { $('yaDevSt').textContent = 'Код истёк — нажмите «Войти по коду» ещё раз.'; return; }
+        try {
+          const st = await YA.devicePoll(d.device_code);
+          if (st === 'ok') { render(); renderSources(); return; }
+        } catch (e) { $('yaDevSt').textContent = 'Ошибка: ' + e.message; return; }
+        devTimer = setTimeout(tick, Math.max(2, d.interval || 5) * 1000);
+      };
+      devTimer = setTimeout(tick, Math.max(2, d.interval || 5) * 1000);
+    } catch (e) { box.innerHTML = `<p class="err">Не удалось получить код: ${esc(e.message)}</p>`; }
   }
   // Пошаговая проверка: что из API доступно со страницы
   async function diagnose() {
